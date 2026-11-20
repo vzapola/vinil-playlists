@@ -42,11 +42,19 @@ A playlist recebe só as faixas do seu disco, na ordem do vinil, e nunca duplica
 ### 3. Token da rotina (uma vez, num computador com Node 18+)
 Na pasta do projeto:
 
+No PowerShell (Windows):
+
+```powershell
+$env:SPOTIFY_CLIENT_ID="xxx"; $env:SPOTIFY_CLIENT_SECRET="yyy"; node sync/auth.mjs spotify
+```
+
+No bash (macOS/Linux):
+
 ```bash
 SPOTIFY_CLIENT_ID=xxx SPOTIFY_CLIENT_SECRET=yyy node sync/auth.mjs spotify
 ```
 
-O comando abre o navegador, você autoriza e o terminal imprime um refresh token.
+O comando abre o navegador, você autoriza e o terminal imprime um refresh token. Esse token é um segredo: cadastre direto em Settings › Secrets, sem colar em outro lugar.
 
 ### 4. Secrets no GitHub
 Settings › Secrets and variables › Actions.
