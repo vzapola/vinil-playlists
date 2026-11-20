@@ -23,6 +23,24 @@ A página fica aberta: qualquer pessoa digita o próprio usuário do Discogs e v
 
 A playlist recebe só as faixas do seu disco, na ordem do vinil, e nunca duplica: cada execução lê a playlist e adiciona apenas o que falta. Nada é removido.
 
+Um disco que não existe na plataforma não quebra nada: ele entra em "sem match", contribui com zero faixas e fica registrado ali. Resultados que não ficaram 100% são reconsultados sozinhos depois de 7 dias, então um álbum que chegue ao Spotify mais tarde é pego numa atualização futura. A caixa *Refazer a análise* força a reconsulta na hora.
+
+## No dia a dia
+
+Cadastrou um disco novo no Discogs? Abra a página, **Buscar**, **Atualizar playlist**. Só as faixas novas são acrescentadas — repetir o clique não duplica nada. Disco já casado 100% fica em cache e não é procurado de novo, então atualizar é questão de segundos depois da primeira carga.
+
+### Nome da playlist
+
+O campo **Nome da playlist** fica na página; o valor inicial vem de `playlistName` em `config.js`. A playlist é guardada pelo **id** na primeira criação, e é o id que manda dali em diante:
+
+- renomear a playlist dentro do Spotify não quebra a ligação;
+- mudar o nome no campo da página renomeia a playlist existente, em vez de criar outra;
+- se você apagar a playlist no Spotify, a próxima atualização cria uma nova.
+
+### Onde ver o que não vinculou
+
+Depois de *Analisar matches* ou *Atualizar playlist*, os contadores **completos / parciais / sem match / pendentes** filtram a lista ao serem clicados. Abrindo um disco, cada faixa mostra: **✓** achada no álbum, **↪** achada em outro álbum (com o nome dele), **✕** não achada. O botão **CSV** exporta tudo, com uma coluna `faixas_faltando`.
+
 ## Passo a passo
 
 ### 1. GitHub Pages
