@@ -2,6 +2,13 @@ import { titleSim, bestArtistSim, artistSim, isVarious, baseTitle } from './norm
 
 export const TH = { track: 0.85, title: 0.8, artist: 0.75 };
 
+// Versão da lógica de matching. Cada resultado guardado leva este carimbo, e o
+// cache considera velho o que veio de uma versão anterior. Assim uma melhoria
+// alcança sozinha o que já estava salvo, um pedaço por execução, sem obrigar
+// o "refazer tudo" — que, com a cota curta do Spotify, nunca chegava ao fim.
+// Suba este número sempre que o matching mudar de comportamento.
+export const MATCHER_VERSION = 2;
+
 const q = (s) => String(s ?? '').replace(/"/g, '').trim();
 
 // Pareamento guloso faixa a faixa: cada faixa do Discogs pega o melhor candidato ainda livre.
@@ -56,6 +63,7 @@ function summarize(platform, album, matchedAlbum, tracks, extra = {}) {
     otherAlbums: tracks.filter((t) => t.match?.source === 'other').length,
     tracks,
     checkedAt: Date.now(),
+    mv: MATCHER_VERSION,
     ...extra,
   };
 }

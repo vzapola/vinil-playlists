@@ -32,8 +32,14 @@ export async function fetchJson(url, opts = {}, { retries = 4, label = '', onWai
       continue;
     }
     if (res.status === 429 || res.status >= 500) {
-      if (attempt >= retries) throw new HttpError(res.status, await safeBody(res), label);
       const ra = Number(res.headers.get('Retry-After'));
+      if (attempt >= retries) {
+        const err = new HttpError(res.status, await safeBody(res), label);
+        // Quanto o servidor pediu de espera: vira instrução concreta na tela,
+        // em vez de um "tente mais tarde" que não diz quando.
+        if (ra > 0) err.retryAfter = ra;
+        throw err;
+      }
       const delay = ra ? ra * 1000 + 250 : Math.min(1500 * 2 ** attempt, MAX_BACKOFF_MS);
       onWait?.({ delay, attempt: attempt + 1, retries, status: res.status, label });
       await sleep(delay);

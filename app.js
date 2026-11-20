@@ -312,6 +312,16 @@ function matchFnFor(platform, yt) {
   return (a, t) => matchAlbumYouTube(a, t, yt, { trackSearch });
 }
 
+// "Refazer" é ação de uma vez só: a caixa se desmarca ao começar. Deixada
+// ligada, todo clique recomeçava do primeiro disco — e, com a cota curta do
+// Spotify, a análise morria sempre no mesmo ponto sem nunca alcançar o resto.
+function takeForce() {
+  const el = $('#force');
+  const on = el.checked;
+  el.checked = false;
+  return on;
+}
+
 async function runMatch(platform) {
   log('');
   setPlatform(platform);
@@ -324,7 +334,7 @@ async function runMatch(platform) {
     albums: state.albums,
     cache: state.cache,
     matchFn: matchFnFor(platform, yt),
-    force: $('#force').checked,
+    force: takeForce(),
     onSave: saveCache,
     onResult: (a, r) => {
       state.session[platform][a.key] = r;
@@ -347,6 +357,13 @@ async function runSync(platform) {
   setPlatform(platform);
   if (platform === 'spotify') {
     const { results, stopped } = await runMatch('spotify');
+    // Parou sem conseguir analisar nada: mexer na playlist agora só renderia
+    // mais 429 e esconderia o motivo da parada.
+    if (stopped && !Object.keys(results).length) {
+      progress('spotify', 1, 1, 'Análise interrompida.');
+      showResult('spotify', stopped);
+      return;
+    }
     progress('spotify', 0, 1, 'Atualizando a playlist…');
     const pin = playlistPin();
     const name = playlistName();

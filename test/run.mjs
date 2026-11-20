@@ -1,7 +1,7 @@
 // Testes offline com APIs simuladas: node test/run.mjs
 import assert from 'node:assert/strict';
 import { titleSim, artistSim, norm } from '../core/normalize.js';
-import { matchAlbumSpotify, matchAlbumYouTube } from '../core/matcher.js';
+import { matchAlbumSpotify, matchAlbumYouTube, MATCHER_VERSION } from '../core/matcher.js';
 import { toAlbum, parseTracklist } from '../core/discogs.js';
 import { initCache, matchAll, syncSpotify, syncYouTube } from '../core/pipeline.js';
 import { createYouTube, QuotaExhausted } from '../core/youtube.js';
@@ -231,6 +231,27 @@ await test('Pipeline: 429 para a análise em vez de errar disco por disco', asyn
   assert.equal(chamadas, 1, 'para no primeiro disco, não varre os outros');
   assert.ok(/429/.test(stopped), 'o motivo da parada precisa chegar à tela');
   assert.equal(Object.keys(results).length, 0);
+});
+
+// Sem isto, melhorar o matching não alcançava o que já estava salvo a não ser
+// pelo "refazer tudo" — que a cota do Spotify nunca deixava terminar.
+await test('Pipeline: resultado de versão antiga do matcher é refeito sozinho', async () => {
+  const cache = initCache();
+  const a = { key: 'k1', releaseId: 1, artist: 'x', title: 't', artists: ['x'] };
+  cache.discogs[1] = { tracklist: [], barcode: null };
+  const feito = (mv) => ({ platform: 'spotify', key: a.key, status: 'full', tracks: [], found: 0, total: 0, checkedAt: Date.now(), mv });
+  cache.spotify[a.key] = feito(MATCHER_VERSION - 1); // salvo por uma versão anterior
+
+  let chamou = 0;
+  const matchFn = async () => {
+    chamou++;
+    return feito(MATCHER_VERSION);
+  };
+  await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
+  assert.equal(chamou, 1, 'carimbo antigo deve ser refeito mesmo sem "refazer tudo"');
+
+  await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
+  assert.equal(chamou, 1, 'já na versão atual, não gasta cota de novo');
 });
 
 // Prepara coleção + matches para os testes de playlist fixada.

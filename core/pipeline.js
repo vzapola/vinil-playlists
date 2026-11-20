@@ -1,4 +1,5 @@
 import { QuotaExhausted } from './youtube.js';
+import { MATCHER_VERSION } from './matcher.js';
 
 const DAY = 86_400_000;
 
@@ -16,6 +17,10 @@ export function initCache(data) {
 
 export function isFresh(entry, platform) {
   if (!entry) return false;
+  // Resultado de uma versão anterior do matcher conta como velho: é isso que
+  // faz as melhorias alcançarem o que já está salvo, aos poucos, a cada
+  // execução, em vez de exigir um "refazer tudo" que a cota não deixa terminar.
+  if (entry.mv !== MATCHER_VERSION) return false;
   if (entry.status === 'full') return true;
   return Date.now() - (entry.checkedAt || 0) < TTL_DAYS[platform] * DAY;
 }
@@ -55,7 +60,9 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
         // da cota. O que já foi analisado está salvo e a próxima execução
         // continua de onde parou.
         if (e.status === 429) {
-          stopped = 'O Spotify limitou as chamadas (429). O que já foi analisado está salvo — espere uns minutos e rode de novo para continuar de onde parou.';
+          const pedido = e.retryAfter ? ` O Spotify pediu ${waitLabel(e.retryAfter)} de espera.` : '';
+          const feitos = Object.keys(results).length;
+          stopped = `O Spotify limitou as chamadas (429).${pedido} ${feitos} ${feitos === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada e já salvos — rode de novo depois desse tempo para continuar de onde parou.`;
           break;
         }
         results[a.key] = errorResult(platform, a, e);
@@ -67,6 +74,18 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
     onProgress?.(i + 1, albums.length, a);
   }
   return { results, stopped };
+}
+
+function waitLabel(seconds) {
+  if (seconds >= 3600) {
+    const h = Math.round(seconds / 3600);
+    return h === 1 ? 'cerca de 1 hora' : `cerca de ${h} horas`;
+  }
+  if (seconds >= 60) {
+    const m = Math.round(seconds / 60);
+    return m === 1 ? 'cerca de 1 minuto' : `cerca de ${m} minutos`;
+  }
+  return `${Math.round(seconds)} segundos`;
 }
 
 function errorResult(platform, album, e) {
