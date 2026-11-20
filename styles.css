@@ -74,6 +74,7 @@ input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
 .opts summary { cursor: pointer; }
 .opts input { width: 100%; margin: 8px 0 4px; }
 .opts small { display: block; }
+.opts code { font: 500 12px 'IBM Plex Mono', monospace; color: var(--ink); background: var(--bg2); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
 
 .progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .bar, .qbar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }

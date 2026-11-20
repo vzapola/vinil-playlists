@@ -9,7 +9,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <header class="top">
@@ -46,6 +45,16 @@
           <span class="pl-status" id="sp-status">desconectado</span>
           <button class="btn small" id="btn-sp-connect">Conectar</button>
         </div>
+        <details class="opts">
+          <summary>Usar meu próprio app do Spotify</summary>
+          <input id="sp-clientid" type="text" placeholder="Client ID do seu app" autocomplete="off" autocapitalize="off" spellcheck="false" />
+          <small>
+            O app desta página só aceita as contas que o dono liberou (o Spotify permite 5).
+            Para usar a sua: em developer.spotify.com/dashboard crie um app marcando <b>Web API</b>,
+            ponha <code class="redirect-uri"></code> em Redirect URIs e cole o Client ID aqui.
+            Fica salvo só neste navegador.
+          </small>
+        </details>
         <div class="pl-actions">
           <button class="btn" id="btn-sp-match" disabled>Analisar matches</button>
           <button class="btn accent" id="btn-sp-sync" disabled>Atualizar playlist</button>

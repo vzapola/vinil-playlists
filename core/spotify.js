@@ -28,18 +28,31 @@ export function createSpotify({ getToken }) {
   let meCache = null;
   const me = async () => (meCache ??= await api('/me'));
 
+  // market=from_token é o jeito documentado de dizer "use o mercado do próprio token".
+  // Se a API recusar o valor (400), desligamos o parâmetro e seguimos sem ele.
+  let useMarket = true;
+  async function tryMarket(run) {
+    try {
+      return await run(useMarket ? 'from_token' : null);
+    } catch (e) {
+      if (!useMarket || e.status !== 400) throw e;
+      useMarket = false;
+      return run(null);
+    }
+  }
+
   return {
     api,
     me,
     async searchAlbums(q) {
-      const r = await api('/search', { params: { q, type: 'album', limit: 10, market: 'from_token' } });
+      const r = await tryMarket((market) => api('/search', { params: { q, type: 'album', limit: 10, market } }));
       return r?.albums?.items?.filter(Boolean) || [];
     },
     async searchTracks(q) {
-      const r = await api('/search', { params: { q, type: 'track', limit: 10, market: 'from_token' } });
+      const r = await tryMarket((market) => api('/search', { params: { q, type: 'track', limit: 10, market } }));
       return r?.tracks?.items?.filter(Boolean) || [];
     },
-    albumTracks: (id) => paginate(`/albums/${id}/tracks?limit=50&market=from_token`),
+    albumTracks: (id) => tryMarket((market) => paginate(`/albums/${id}/tracks?limit=50${market ? `&market=${market}` : ''}`)),
     async findOrCreatePlaylist(name, description) {
       const user = await me();
       const all = await paginate('/me/playlists?limit=50');

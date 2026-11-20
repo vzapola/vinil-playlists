@@ -91,14 +91,20 @@ const REDIRECT = location.origin + location.pathname;
 const SP_SCOPES = 'playlist-read-private playlist-modify-private playlist-modify-public';
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
+// O app em Development Mode do Spotify aceita no máximo 5 contas autorizadas pelo dono.
+// Quem não estiver nessa lista pode criar o próprio app e colar o Client ID aqui na página.
+const configured = (id) => !!id && !id.startsWith('COLE_');
+const spClientId = () => (LS.get('vp.spClientId', '') || '').trim() || (configured(CONFIG.spotifyClientId) ? CONFIG.spotifyClientId : '');
+const YT_ON = configured(CONFIG.googleClientId);
+
 async function spLogin() {
-  if (CONFIG.spotifyClientId.startsWith('COLE_')) return log('Preencha o spotifyClientId em config.js.');
+  if (!spClientId()) return log('Falta o Client ID do Spotify. Abra "Usar meu próprio app do Spotify" e cole o seu, ou preencha spotifyClientId em config.js.');
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   sessionStorage.setItem('vp.sp.verifier', verifier);
   const u = new URL('https://accounts.spotify.com/authorize');
   u.search = new URLSearchParams({
-    client_id: CONFIG.spotifyClientId,
+    client_id: spClientId(),
     response_type: 'code',
     redirect_uri: REDIRECT,
     code_challenge_method: 'S256',
@@ -113,7 +119,7 @@ async function spTokenRequest(params) {
   const r = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: CONFIG.spotifyClientId, ...params }),
+    body: new URLSearchParams({ client_id: spClientId(), ...params }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(`Spotify: ${j.error_description || j.error}`);
@@ -155,7 +161,7 @@ let ytToken = (() => {
 })();
 
 function ytLogin() {
-  if (CONFIG.googleClientId.startsWith('COLE_')) return log('Preencha o googleClientId em config.js.');
+  if (!YT_ON) return log('O YouTube Music está desligado. Para ativar, preencha googleClientId em config.js.');
   if (!window.google?.accounts?.oauth2) return log('A biblioteca do Google ainda está carregando. Tente de novo em alguns segundos.');
   const client = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.googleClientId,
@@ -543,6 +549,11 @@ function exportCsv() {
 /* ---------- eventos ---------- */
 $('#username').value = state.username;
 $('#discogs-token').value = LS.get('vp.discogsToken', '');
+$('#sp-clientid').value = LS.get('vp.spClientId', '');
+$('#sp-clientid').oninput = (e) => {
+  LS.set('vp.spClientId', e.target.value.trim());
+  log('');
+};
 $('#form-discogs').onsubmit = (e) => {
   e.preventDefault();
   busy($('#btn-load'), loadCollection);
@@ -565,8 +576,28 @@ $('#btn-reset').onclick = () => {
   location.reload();
 };
 
+/* ---------- plataformas ativas ---------- */
+// O bloco do YouTube só aparece se config.js tiver um googleClientId.
+// Sem ele a página fica só com o Spotify, e a biblioteca do Google nem é carregada.
+function setupPlatforms() {
+  $('.sub').textContent = `Sua coleção do Discogs, faixa por faixa, no Spotify${YT_ON ? ' e no YouTube Music' : ''}.`;
+  $$('.redirect-uri').forEach((el) => (el.textContent = REDIRECT));
+  if (YT_ON) {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    document.head.append(s);
+    return;
+  }
+  $('.platform[data-p="youtube"]').hidden = true;
+  $('.seg').hidden = true;
+  state.platform = 'spotify';
+}
+
 /* ---------- início ---------- */
 (async () => {
+  setupPlatforms();
   try {
     await spHandleRedirect();
   } catch (e) {
