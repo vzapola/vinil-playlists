@@ -28,18 +28,9 @@ export function createSpotify({ getToken }) {
   let meCache = null;
   const me = async () => (meCache ??= await api('/me'));
 
-  // market=from_token é o jeito documentado de dizer "use o mercado do próprio token".
-  // Se a API recusar o valor (400), desligamos o parâmetro e seguimos sem ele.
-  let useMarket = true;
-  async function tryMarket(run) {
-    try {
-      return await run(useMarket ? 'from_token' : null);
-    } catch (e) {
-      if (!useMarket || (e.status !== 400 && e.status !== 403)) throw e;
-      useMarket = false;
-      return run(null);
-    }
-  }
+  // Sem parâmetro market: a documentação atual só aceita código de país ISO
+  // 3166-1 alfa-2, e o valor legado "from_token" saiu. Como todas as chamadas
+  // daqui usam token de usuário, o país da conta já tem prioridade sozinho.
 
   async function findOrCreatePlaylist(name, description) {
     const user = await me();
@@ -75,14 +66,14 @@ export function createSpotify({ getToken }) {
     findOrCreatePlaylist,
     resolvePlaylist,
     async searchAlbums(q) {
-      const r = await tryMarket((market) => api('/search', { params: { q, type: 'album', limit: 10, market } }));
+      const r = await api('/search', { params: { q, type: 'album', limit: 10 } });
       return r?.albums?.items?.filter(Boolean) || [];
     },
     async searchTracks(q) {
-      const r = await tryMarket((market) => api('/search', { params: { q, type: 'track', limit: 10, market } }));
+      const r = await api('/search', { params: { q, type: 'track', limit: 10 } });
       return r?.tracks?.items?.filter(Boolean) || [];
     },
-    albumTracks: (id) => tryMarket((market) => paginate(`/albums/${id}/tracks?limit=50${market ? `&market=${market}` : ''}`)),
+    albumTracks: (id) => paginate(`/albums/${id}/tracks?limit=50`),
     async playlistUris(id) {
       const items = await paginate(`/playlists/${id}/items?limit=50`);
       return items.map((e) => (e.item || e.track)?.uri).filter(Boolean);
