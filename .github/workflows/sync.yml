@@ -1,9 +1,12 @@
 name: Sync diário do vinil
 
+# Só roda quando você manda, pelo botão "Run workflow" em Actions.
+# A atualização do dia a dia é feita na página, no botão "Atualizar playlist".
+# Para voltar a rodar sozinho, descomente o schedule abaixo.
 on:
-  schedule:
-    - cron: '17 9 * * *' # todo dia às 06:17 (horário de Brasília)
-  workflow_dispatch: {} # botão "Run workflow" para rodar na hora
+  # schedule:
+  #   - cron: '17 9 * * *' # todo dia às 06:17 (horário de Brasília)
+  workflow_dispatch: {}
 
 permissions:
   contents: write
