@@ -5,6 +5,7 @@ import { matchAlbumSpotify, matchAlbumYouTube } from '../core/matcher.js';
 import { toAlbum, parseTracklist } from '../core/discogs.js';
 import { initCache, matchAll, syncSpotify, syncYouTube } from '../core/pipeline.js';
 import { createYouTube, QuotaExhausted } from '../core/youtube.js';
+import { createSpotify } from '../core/spotify.js';
 
 let pass = 0;
 const test = async (name, fn) => {
@@ -161,6 +162,29 @@ await test('Spotify: 12" de remixes casa uma vez só, não seis', async () => {
   assert.equal(r.status, 'partial', 'antes dava "sem match"; seis matches dariam "completo", e os dois seriam mentira');
   assert.equal(r.tracks[0].match.uri, 'spotify:track:gt');
   assert.equal(r.tracks[1].match, null);
+});
+
+// Um disco de remixes repete a mesma busca uma vez por faixa. Repetir isso na
+// rede, vezes 149 discos, é o que levava a coleção inteira a tomar 429.
+await test('Spotify: a mesma busca não vai duas vezes à rede', async () => {
+  const real = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return { ok: true, status: 200, headers: { get: () => null }, async text() { return JSON.stringify({ tracks: { items: [] }, albums: { items: [] } }); } };
+  };
+  try {
+    const sp = createSpotify({ getToken: async () => 'tok', minGap: 0 });
+    await sp.searchTracks('track:"Good Time"');
+    await sp.searchTracks('track:"Good Time"');
+    await sp.searchTracks('track:"Good Time"');
+    assert.equal(calls, 1, 'as repetições saem do cache');
+    await sp.searchTracks('track:"Outra"');
+    await sp.searchAlbums('track:"Good Time"'); // tipo diferente, busca diferente
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = real;
+  }
 });
 
 await test('Pipeline: matchAll + syncSpotify idempotente', async () => {

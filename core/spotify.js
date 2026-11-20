@@ -1,17 +1,38 @@
-import { fetchJson } from './http.js';
+import { fetchJson, sleep } from './http.js';
 
 const API = 'https://api.spotify.com/v1';
 
+// Uma coleção grande dispara mais de mil chamadas. Sem freio, o Spotify
+// responde 429 e o disco inteiro vira erro, então as chamadas são espaçadas.
+// A cada 429 que escapa das retentativas o espaçamento dobra e não volta,
+// para a análise desacelerar sozinha em vez de insistir e falhar.
+const MIN_GAP_MS = 200;
+const MAX_GAP_MS = 3000;
+
 // Endpoints válidos para apps em Development Mode após as mudanças de 2026:
 // POST /me/playlists, GET/POST /playlists/{id}/items, GET /search (limit máx. 10).
-export function createSpotify({ getToken }) {
+export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle } = {}) {
+  let gap = minGap;
+  let last = 0;
+
   async function api(path, { method = 'GET', body, params } = {}) {
+    const wait = last + gap - Date.now();
+    if (wait > 0) await sleep(wait);
+    last = Date.now();
     const token = await getToken();
     const u = new URL(path.startsWith('http') ? path : API + path);
     for (const [k, v] of Object.entries(params || {})) if (v != null) u.searchParams.set(k, v);
     const headers = { Authorization: `Bearer ${token}` };
     if (body) headers['Content-Type'] = 'application/json';
-    return fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify' });
+    try {
+      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 6 });
+    } catch (e) {
+      if (e.status === 429 && gap < MAX_GAP_MS) {
+        gap = Math.min(gap * 2, MAX_GAP_MS);
+        onThrottle?.(gap);
+      }
+      throw e;
+    }
   }
 
   async function paginate(first) {
@@ -31,6 +52,15 @@ export function createSpotify({ getToken }) {
   // Sem parâmetro market: a documentação atual só aceita código de país ISO
   // 3166-1 alfa-2, e o valor legado "from_token" saiu. Como todas as chamadas
   // daqui usam token de usuário, o país da conta já tem prioridade sozinho.
+
+  // Um 12" com seis variantes da mesma música gera seis vezes a mesma busca.
+  // O catálogo não muda no meio da análise, então a resposta é reaproveitada.
+  const searchCache = new Map();
+  async function search(q, type) {
+    const key = `${type}\u0000${q}`;
+    if (!searchCache.has(key)) searchCache.set(key, await api('/search', { params: { q, type, limit: 10 } }));
+    return searchCache.get(key);
+  }
 
   async function findOrCreatePlaylist(name, description) {
     const user = await me();
@@ -66,11 +96,11 @@ export function createSpotify({ getToken }) {
     findOrCreatePlaylist,
     resolvePlaylist,
     async searchAlbums(q) {
-      const r = await api('/search', { params: { q, type: 'album', limit: 10 } });
+      const r = await search(q, 'album');
       return r?.albums?.items?.filter(Boolean) || [];
     },
     async searchTracks(q) {
-      const r = await api('/search', { params: { q, type: 'track', limit: 10 } });
+      const r = await search(q, 'track');
       return r?.tracks?.items?.filter(Boolean) || [];
     },
     albumTracks: (id) => paginate(`/albums/${id}/tracks?limit=50`),

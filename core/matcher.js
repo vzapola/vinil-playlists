@@ -1,4 +1,4 @@
-import { titleSim, bestArtistSim, artistSim, isVarious } from './normalize.js';
+import { titleSim, bestArtistSim, artistSim, isVarious, baseTitle } from './normalize.js';
 
 export const TH = { track: 0.85, title: 0.8, artist: 0.75 };
 
@@ -146,7 +146,12 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
 }
 
 async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId, usedIds = new Set()) {
-  const queries = artist && !isVarious(artist) ? [`track:"${q(title)}" artist:"${q(artist)}"`, `${q(title)} ${q(artist)}`] : [`track:"${q(title)}"`];
+  // Com sufixo de versão no título ("Good Time (Beasley Metromix)"), procurar
+  // o título cheio não acha nada: o que existe no Spotify é a música. Então a
+  // busca usa o título base — mas o score continua medido contra o original.
+  const base = baseTitle(title);
+  const term = base && base !== String(title).trim() ? base : title;
+  const queries = artist && !isVarious(artist) ? [`track:"${q(term)}" artist:"${q(artist)}"`, `${q(term)} ${q(artist)}`] : [`track:"${q(term)}"`];
   for (const query of queries) {
     let items = [];
     try {

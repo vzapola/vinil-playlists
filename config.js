@@ -1,5 +1,9 @@
 // Configurações públicas (Client IDs não são segredo; os secrets ficam no GitHub).
 export const CONFIG = {
+  // Aparece no rodapé da página. Serve para conferir, de bate-pronto, se o
+  // navegador está rodando a versão publicada ou uma em cache.
+  version: '2026-11-20 · 6',
+
   // Spotify Developer Dashboard > seu app > Client ID
   spotifyClientId: '4325e1af4fcc4035b0e61c4e3d146c67',
 

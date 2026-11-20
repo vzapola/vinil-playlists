@@ -79,6 +79,7 @@ input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field label { color: var(--muted); font-size: 13px; font-weight: 500; }
 .field small { color: var(--muted); font-size: 12px; min-height: 1em; }
+.build { display: block; margin-top: 8px; font: 500 11px 'IBM Plex Mono', monospace; opacity: 0.55; }
 
 .progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .bar, .qbar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }

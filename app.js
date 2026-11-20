@@ -149,7 +149,10 @@ async function spGetToken() {
   return t.access_token;
 }
 
-const sp = createSpotify({ getToken: spGetToken });
+const sp = createSpotify({
+  getToken: spGetToken,
+  onThrottle: (gap) => log(`O Spotify pediu calma (429). Ritmo reduzido para ${gap} ms entre chamadas — a análise continua, só mais devagar.`),
+});
 
 /* ---------- YouTube (Google Identity Services, token de 1h) ---------- */
 let ytToken = (() => {
@@ -629,6 +632,7 @@ $('#btn-reset').onclick = () => {
 // Sem ele a página fica só com o Spotify, e a biblioteca do Google nem é carregada.
 function setupPlatforms() {
   $('.sub').textContent = `Sua coleção do Discogs, faixa por faixa, no Spotify${YT_ON ? ' e no YouTube Music' : ''}.`;
+  $('#build').textContent = `versão ${CONFIG.version}`;
   $$('.redirect-uri').forEach((el) => (el.textContent = REDIRECT));
   if (YT_ON) {
     const s = document.createElement('script');

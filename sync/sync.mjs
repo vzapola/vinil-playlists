@@ -72,7 +72,7 @@ async function main() {
   if (env('SPOTIFY_REFRESH_TOKEN')) {
     const basic = Buffer.from(`${env('SPOTIFY_CLIENT_ID')}:${env('SPOTIFY_CLIENT_SECRET')}`).toString('base64');
     const getToken = refresher('Spotify', 'https://accounts.spotify.com/api/token', { grant_type: 'refresh_token', refresh_token: env('SPOTIFY_REFRESH_TOKEN') }, { Authorization: `Basic ${basic}` });
-    const sp = createSpotify({ getToken });
+    const sp = createSpotify({ getToken, onThrottle: (gap) => console.log(`Spotify pediu calma (429): ritmo reduzido para ${gap} ms entre chamadas.`) });
     const { results } = await matchAll({ platform: 'spotify', albums, cache, matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, rel) });
     await save();
     const s = await syncSpotify({
