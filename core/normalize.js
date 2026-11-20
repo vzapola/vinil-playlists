@@ -56,15 +56,39 @@ function digits(s) {
   return (s.match(/\d+/g) || []).sort().join(',');
 }
 
+// Título "base": o que sobra antes do primeiro travessão e sem os parênteses
+// ou colchetes finais. "Musical - Remixed Original Album" -> "Musical";
+// "Good Time (Beasley Metromix)" -> "Good Time".
+// Serve para os sufixos de versão que nenhuma lista de palavras dá conta de
+// enumerar (nomes de remixador, "12\"", "Percapella", e por aí vai).
+export function baseTitle(s) {
+  let t = String(s ?? '').split(/\s[-–—]\s/)[0].trim();
+  let prev;
+  do {
+    prev = t;
+    t = t.replace(/\s*[([][^)\]]*[)\]]\s*$/, '').trim();
+  } while (t && t !== prev);
+  return t || String(s ?? '').trim();
+}
+
 // Similaridade 0..1 entre dois títulos (álbum ou faixa).
-// Números diferentes ("Clube da Esquina" x "Clube da Esquina 2") derrubam o score.
+// Números diferentes ("Clube da Esquina" x "Clube da Esquina 2") derrubam o
+// score — e essa checagem vale para cada comparação separadamente, senão um
+// "12\"" no sufixo derrubaria o pareamento pelo título base.
+// O título base vale um pouco menos que o título cheio, para que um encontro
+// exato seja sempre preferido quando os dois existem.
 export function titleSim(a, b) {
   const na = norm(a);
   const nb = norm(b);
   if (!na || !nb) return 0;
-  let s = dice(na, nb);
-  if (digits(na) !== digits(nb)) s *= 0.5;
-  return s;
+  const full = dice(na, nb) * (digits(na) === digits(nb) ? 1 : 0.5);
+
+  const ba = norm(baseTitle(a));
+  const bb = norm(baseTitle(b));
+  if (!ba || !bb || (ba === na && bb === nb)) return full;
+
+  const base = dice(ba, bb) * (digits(ba) === digits(bb) ? 1 : 0.5) * 0.95;
+  return Math.max(full, base);
 }
 
 // Similaridade entre artistas. Aceita contenção de tokens

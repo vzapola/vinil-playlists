@@ -127,18 +127,25 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
   }));
 
   // Faixas que faltaram: procura a mesma música do mesmo artista em outros álbuns.
+  // usedIds impede que várias faixas do mesmo disco apontem para a mesma faixa
+  // do Spotify — um 12" com seis remixes de uma música só casaria seis vezes
+  // com ela e o disco apareceria como completo, o que seria mentira.
+  const usedIds = new Set(tracks.map((t) => t.match?.id).filter(Boolean));
   for (let i = 0; i < tracks.length; i++) {
     if (tracks[i].match) continue;
     const dt = discogsTracks[i];
     const art = dt.artists.find((a) => !isVarious(a)) || primary;
-    const hit = await findTrackElsewhere(sp, dt.title, art, album.title, best?.it.id);
-    if (hit) tracks[i].match = hit;
+    const hit = await findTrackElsewhere(sp, dt.title, art, album.title, best?.it.id, usedIds);
+    if (hit) {
+      tracks[i].match = hit;
+      usedIds.add(hit.id);
+    }
   }
 
   return summarize('spotify', album, matchedAlbum, tracks);
 }
 
-async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId) {
+async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId, usedIds = new Set()) {
   const queries = artist && !isVarious(artist) ? [`track:"${q(title)}" artist:"${q(artist)}"`, `${q(title)} ${q(artist)}`] : [`track:"${q(title)}"`];
   for (const query of queries) {
     let items = [];
@@ -150,7 +157,7 @@ async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId)
     }
     let best = null;
     for (const t of items) {
-      if (t.album?.id === excludeAlbumId) continue;
+      if (t.album?.id === excludeAlbumId || usedIds.has(t.id)) continue;
       const tS = titleSim(title, t.name);
       const aS = artist && !isVarious(artist) ? Math.max(0, ...(t.artists || []).map((a) => artistSim(artist, a.name))) : 1;
       if (tS < TH.track || aS < TH.artist) continue;

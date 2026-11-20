@@ -26,6 +26,17 @@ await test('acentos e remaster', () => {
 await test('números diferentes não batem', () => {
   assert.ok(titleSim('Clube da Esquina', 'Clube da Esquina 2') < 0.8);
 });
+// Casos reais da coleção: sufixos que nenhuma lista de palavras enumera.
+await test('sufixo de versão não derruba o pareamento', () => {
+  assert.ok(titleSim('Musical', 'Musical - Remixed Original Album') >= 0.85);
+  assert.ok(titleSim('Eclipse Oculto', 'Eclipse Oculto - Remixed Original Album') >= 0.85);
+  assert.ok(titleSim('Good Time (Beasley Metromix)', 'Good Time') >= 0.85);
+  assert.ok(titleSim('Good Time (Nelle\'s 12")', 'Good Time') >= 0.85, 'o 12" do sufixo não pode contar como número do título');
+});
+await test('título base não atropela discos diferentes', () => {
+  assert.ok(titleSim('Clube Da Esquina', 'Clube Da Esquina 2') < 0.8);
+  assert.ok(titleSim('Construção', 'Cotidiano') < 0.5);
+});
 await test('artista Discogs com sufixo e nome longo', () => {
   assert.ok(artistSim('Jorge Ben (2)', 'Jorge Ben') > 0.95);
   assert.ok(artistSim('Chico Buarque De Hollanda', 'Chico Buarque') >= 0.9);
@@ -131,6 +142,27 @@ await test('Spotify: Clube da Esquina não casa com Clube da Esquina 2', async (
   const r = await matchAlbumSpotify(a, [{ position: 'A1', title: 'Tudo Que Você Podia Ser', artists: ['Milton Nascimento'] }], mockSpotify(), {});
   assert.equal(r.status, 'none');
 });
+// Um 12" de remixes: o disco tem seis faixas, o Spotify tem a música uma vez.
+await test('Spotify: 12" de remixes casa uma vez só, não seis', async () => {
+  const single = { id: 'gt', uri: 'spotify:track:gt', name: 'Good Time', artists: [{ name: 'Ziggy Marley & The Melody Makers' }], album: { id: 'best', name: 'The Best Of Ziggy Marley & The Melody Makers' }, external_urls: {} };
+  const sp = {
+    async searchAlbums() { return []; }, // o 12" não existe como álbum no Spotify
+    async searchTracks() { return [single]; },
+    async albumTracks() { return []; },
+  };
+  const a = toAlbum({ basic_information: { id: 9, master_id: 0, title: 'Good Time', artists: [{ name: 'Ziggy Marley And The Melody Makers' }] } });
+  const dtracks = ['Good Time (Beasley Metromix)', 'Good Time (Beasley Instrumental)', 'Good Time (Beasley Percapella)', 'Good Time (Nelle\'s 12")', 'Good Time (Nellee\'s 12" Instrumental)', 'Good Time (LP Version)'].map((title, i) => ({
+    position: `A${i + 1}`,
+    title,
+    artists: ['Ziggy Marley And The Melody Makers'],
+  }));
+  const r = await matchAlbumSpotify(a, dtracks, sp, {});
+  assert.equal(r.found, 1, 'a mesma faixa não pode casar seis vezes');
+  assert.equal(r.status, 'partial', 'antes dava "sem match"; seis matches dariam "completo", e os dois seriam mentira');
+  assert.equal(r.tracks[0].match.uri, 'spotify:track:gt');
+  assert.equal(r.tracks[1].match, null);
+});
+
 await test('Pipeline: matchAll + syncSpotify idempotente', async () => {
   const cache = initCache();
   cache.discogs[album.releaseId] = { tracklist: tracks, barcode: null };
