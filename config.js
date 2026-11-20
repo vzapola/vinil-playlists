@@ -1,7 +1,7 @@
 // Configurações públicas (Client IDs não são segredo; os secrets ficam no GitHub).
 export const CONFIG = {
   // Spotify Developer Dashboard > seu app > Client ID
-  spotifyClientId: 'COLE_AQUI_O_CLIENT_ID_DO_SPOTIFY',
+  spotifyClientId: '4325e1af4fcc4035b0e61c4e3d146c67',
 
   // YouTube Music é opcional e vem desligado. Com este campo vazio, o bloco do
   // YouTube não aparece na página e a biblioteca do Google nem é carregada.
