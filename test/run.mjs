@@ -247,11 +247,14 @@ await test('Pipeline: resultado de versão antiga do matcher é refeito sozinho'
     chamou++;
     return feito(MATCHER_VERSION);
   };
-  await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
+  const r1 = await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
   assert.equal(chamou, 1, 'carimbo antigo deve ser refeito mesmo sem "refazer tudo"');
+  assert.equal(r1.analyzed, 1);
 
-  await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
+  const r2 = await matchAll({ platform: 'spotify', albums: [a], cache, matchFn });
   assert.equal(chamou, 1, 'já na versão atual, não gasta cota de novo');
+  assert.equal(r2.analyzed, 0, 'reaproveitado não conta como analisado');
+  assert.equal(r2.done, 1, 'mas continua valendo como resultado');
 });
 
 // Prepara coleção + matches para os testes de playlist fixada.

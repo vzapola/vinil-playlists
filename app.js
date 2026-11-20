@@ -329,7 +329,7 @@ async function runMatch(platform) {
   // botão girando sem texto parece travado.
   progress(platform, 0, state.albums.length, `0/${state.albums.length} · começando…`);
   const yt = platform === 'youtube' ? newYouTube() : null;
-  const { results, stopped } = await matchAll({
+  const { results, stopped, analyzed, done } = await matchAll({
     platform,
     albums: state.albums,
     cache: state.cache,
@@ -343,25 +343,37 @@ async function runMatch(platform) {
     onProgress: (i, n, a) => progress(platform, i, n, `${i}/${n} · ${a.artist} – ${a.title}`),
   });
   saveCache();
+  // A linha de progresso tem que terminar contando o desfecho. Parada logo no
+  // começo, ela ficava presa em "começando…", dizendo o oposto da mensagem de
+  // erro logo abaixo.
+  const n = state.albums.length;
+  progress(
+    platform,
+    stopped ? done : n,
+    n,
+    stopped
+      ? `Interrompida · ${analyzed} ${analyzed === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada`
+      : `Análise concluída · ${n} discos`,
+  );
   const c = countStatuses(platform);
   const line = `${c.full} completos · ${c.partial} parciais · ${c.none} sem match${c.pending ? ` · ${c.pending} pendentes` : ''}`;
   showResult(platform, stopped ? `${line}. ${stopped}` : line);
   const digest = errorDigest(platform);
   if (digest) log(digest);
   render();
-  return { results, stopped };
+  return { results, stopped, analyzed };
 }
 
 async function runSync(platform) {
   log('');
   setPlatform(platform);
   if (platform === 'spotify') {
-    const { results, stopped } = await runMatch('spotify');
+    const { results, stopped, analyzed } = await runMatch('spotify');
     // Parou sem conseguir analisar nada: mexer na playlist agora só renderia
-    // mais 429 e esconderia o motivo da parada.
-    if (stopped && !Object.keys(results).length) {
-      progress('spotify', 1, 1, 'Análise interrompida.');
-      showResult('spotify', stopped);
+    // mais 429 e esconderia o motivo da parada. A linha de progresso que
+    // runMatch deixou já conta o desfecho, então não se mexe nela aqui.
+    if (stopped && !analyzed) {
+      showResult('spotify', `Nada foi escrito na playlist. ${stopped}`);
       return;
     }
     progress('spotify', 0, 1, 'Atualizando a playlist…');

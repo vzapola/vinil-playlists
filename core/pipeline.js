@@ -41,6 +41,7 @@ export async function loadTracklists({ albums, discogs, cache, onProgress, onSav
 export async function matchAll({ platform, albums, cache, matchFn, force = false, onResult, onProgress, onSave }) {
   const results = {};
   let stopped = null;
+  let analyzed = 0; // só os que passaram pelo matcher, sem contar os reaproveitados
   for (let i = 0; i < albums.length; i++) {
     const a = albums[i];
     const cached = cache[platform][a.key];
@@ -50,6 +51,7 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
       const rel = cache.discogs[a.releaseId] || { tracklist: [], barcode: null };
       try {
         results[a.key] = await matchFn(a, rel.tracklist || [], rel);
+        analyzed++;
       } catch (e) {
         if (e instanceof QuotaExhausted) {
           stopped = e.message;
@@ -61,8 +63,10 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
         // continua de onde parou.
         if (e.status === 429) {
           const pedido = e.retryAfter ? ` O Spotify pediu ${waitLabel(e.retryAfter)} de espera.` : '';
-          const feitos = Object.keys(results).length;
-          stopped = `O Spotify limitou as chamadas (429).${pedido} ${feitos} ${feitos === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada e já salvos — rode de novo depois desse tempo para continuar de onde parou.`;
+          const feitos = analyzed
+            ? `${analyzed} ${analyzed === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada, já salvos.`
+            : 'Nenhum disco chegou a ser analisado nesta rodada.';
+          stopped = `O Spotify limitou as chamadas (429).${pedido} ${feitos} Rode de novo depois desse tempo para continuar de onde parou.`;
           break;
         }
         results[a.key] = errorResult(platform, a, e);
@@ -73,7 +77,7 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
     onResult?.(a, results[a.key]);
     onProgress?.(i + 1, albums.length, a);
   }
-  return { results, stopped };
+  return { results, stopped, analyzed, done: Object.keys(results).length };
 }
 
 function waitLabel(seconds) {
