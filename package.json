@@ -1,0 +1,1 @@
+{"type":"module","name":"vinil-playlists","private":true,"scripts":{"test":"node test/run.mjs","sync":"node sync/sync.mjs"}}

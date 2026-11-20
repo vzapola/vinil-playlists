@@ -1,0 +1,148 @@
+:root {
+  --bg: #16120f;
+  --bg2: #1f1a16;
+  --card: #241e19;
+  --line: #3a3029;
+  --ink: #f3e9dc;
+  --muted: #a8998a;
+  --label: #e8552d;
+  --label-soft: #e8552d22;
+  --full: #8fc17a;
+  --partial: #e8b84a;
+  --none: #d4645a;
+  --pending: #6f6458;
+  --sp: #1ed760;
+  --yt: #ff3d3d;
+  --r: 14px;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 600px at 110% -10%, #3a1f14 0%, transparent 60%),
+    repeating-radial-gradient(circle at 50% -40vh, #ffffff04 0 1px, transparent 1px 4px),
+    var(--bg);
+  color: var(--ink);
+  font: 15px/1.45 'IBM Plex Sans', system-ui, sans-serif;
+  min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+main, .top, footer { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+
+/* cabeçalho com disco girando */
+.top { display: flex; gap: 18px; align-items: center; padding-top: 28px; padding-bottom: 18px; }
+.top h1 { font: 800 34px/0.95 'Fraunces', serif; letter-spacing: -0.5px; margin: 0 0 6px; }
+.sub { margin: 0; color: var(--muted); font-size: 14px; }
+.disc {
+  flex: 0 0 82px; height: 82px; border-radius: 50%;
+  background: repeating-radial-gradient(circle, #0c0a09 0 2px, #1b1715 2px 3px);
+  display: grid; place-items: center; box-shadow: 0 6px 24px #0008;
+  animation: spin 6s linear infinite;
+}
+.disc span { width: 30px; height: 30px; border-radius: 50%; background: var(--label); position: relative; }
+.disc span::after { content: ''; position: absolute; inset: 12px; border-radius: 50%; background: var(--bg); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .disc { animation: none; } }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-bottom: 14px; }
+.step-label { font: 600 12px 'IBM Plex Mono', monospace; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 12px; }
+.step-label span { background: var(--label); color: #1a0d07; padding: 2px 7px; border-radius: 4px; margin-right: 6px; }
+
+.row { display: flex; gap: 8px; }
+input[type=text], input[type=password], input[type=search] {
+  flex: 1; min-width: 0; background: var(--bg2); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 10px; padding: 12px; font: inherit; font-size: 16px;
+}
+input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
+
+.btn {
+  font: 600 14px 'IBM Plex Sans', sans-serif; color: var(--ink); background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; cursor: pointer; white-space: nowrap;
+}
+.btn:disabled { opacity: 0.4; cursor: default; }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.accent { background: var(--label); color: #1a0d07; border-color: var(--label); }
+.btn.small { padding: 7px 11px; font-size: 13px; }
+.btn.ghost { background: transparent; }
+.btn.busy { position: relative; color: transparent; }
+.btn.busy::after { content: ''; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border: 2px solid currentColor; border-color: var(--muted) transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+.opts { margin-top: 10px; color: var(--muted); font-size: 13px; }
+.opts summary { cursor: pointer; }
+.opts input { width: 100%; margin: 8px 0 4px; }
+.opts small { display: block; }
+
+.progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.bar, .qbar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }
+.bar i, .qbar i { display: block; height: 100%; width: 0; background: var(--label); transition: width 0.25s; }
+.ptext, .qtext { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); }
+.summary { margin: 12px 0 0; font-weight: 500; }
+
+.platform { padding: 12px 0; border-top: 1px dashed var(--line); }
+.platform:first-of-type { border-top: 0; padding-top: 0; }
+.pl-head { display: flex; align-items: center; gap: 8px; }
+.pl-head strong { font-weight: 600; }
+.pl-status { color: var(--muted); font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot.sp { background: var(--sp); }
+.dot.yt { background: var(--yt); }
+.pl-actions { display: flex; gap: 8px; margin-top: 10px; }
+.pl-actions .btn { flex: 1; }
+.quota { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.qbar i { background: var(--yt); }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 10px; color: var(--ink); }
+.check.muted { color: var(--muted); }
+.check input { margin-top: 2px; accent-color: var(--label); }
+.result-line { margin: 10px 0 0; font-size: 14px; }
+.result-line a { color: var(--ink); }
+
+/* resultados */
+.seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin: 6px 0 12px; }
+.seg button { flex: 1; background: none; border: 0; color: var(--muted); font: 600 14px 'IBM Plex Sans', sans-serif; padding: 9px; border-radius: 9px; cursor: pointer; }
+.seg button.on { background: var(--bg2); color: var(--ink); }
+
+.chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.chip { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center; cursor: pointer; color: var(--ink); font: inherit; }
+.chip b { display: block; font: 800 22px/1.1 'Fraunces', serif; }
+.chip span { font-size: 11px; color: var(--muted); }
+.chip.on { border-color: currentColor; }
+.chip.full { color: var(--full); } .chip.partial { color: var(--partial); } .chip.none { color: var(--none); } .chip.pending { color: var(--muted); }
+.chip b, .chip.on span { color: inherit; }
+
+.list-tools { display: flex; gap: 8px; margin-bottom: 10px; }
+
+.albums { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.album { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.a-head { width: 100%; display: flex; gap: 12px; align-items: center; padding: 10px; background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.thumb { width: 54px; height: 54px; border-radius: 6px; object-fit: cover; background: var(--bg2); flex: 0 0 54px; }
+.a-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.a-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a-artist { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a-cov { font: 500 11px 'IBM Plex Mono', monospace; color: var(--muted); margin-top: 2px; }
+.badge { font: 600 11px 'IBM Plex Mono', monospace; padding: 4px 7px; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge.full { background: #8fc17a22; color: var(--full); }
+.badge.partial { background: #e8b84a22; color: var(--partial); }
+.badge.none, .badge.error { background: #d4645a22; color: var(--none); }
+.badge.pending { background: #ffffff0d; color: var(--muted); }
+
+.a-body { padding: 0 12px 12px; border-top: 1px solid var(--line); }
+.a-match { font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+.a-match a { color: var(--ink); }
+.tracks { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.tracks li { display: grid; grid-template-columns: 22px 34px 1fr; gap: 4px; padding: 5px 0; border-bottom: 1px solid #ffffff08; }
+.tracks .ic { font-weight: 700; }
+.tracks .pos { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); padding-top: 1px; }
+.tracks .ok .ic { color: var(--full); }
+.tracks .other .ic { color: var(--partial); }
+.tracks .miss .ic { color: var(--none); }
+.tracks .miss .tt { color: var(--muted); }
+.tracks small { display: block; color: var(--partial); font-size: 12px; }
+.tracks a { color: inherit; text-decoration: none; }
+
+.log { background: #d4645a1a; border: 1px solid #d4645a55; color: #f0b5ae; border-radius: 10px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; }
+footer { color: var(--muted); font-size: 12px; padding-top: 24px; padding-bottom: 32px; }
+footer a { color: var(--muted); }
+.linkish { background: none; border: 0; color: var(--muted); text-decoration: underline; font: inherit; cursor: pointer; padding: 0; margin-left: 6px; }

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Do vinil pra playlist</title>
+  <meta name="theme-color" content="#16120f" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="disc" aria-hidden="true"><span></span></div>
+    <div>
+      <h1>Do vinil<br />pra playlist</h1>
+      <p class="sub">Sua coleção do Discogs, faixa por faixa, no Spotify e no YouTube Music.</p>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="step-discogs">
+      <div class="step-label"><span>Lado A</span> Coleção</div>
+      <form id="form-discogs" class="row">
+        <input id="username" type="text" placeholder="usuário do Discogs" autocomplete="off" autocapitalize="off" spellcheck="false" required />
+        <button type="submit" class="btn primary" id="btn-load">Buscar</button>
+      </form>
+      <details class="opts">
+        <summary>Token do Discogs (opcional, deixa a busca 2x mais rápida)</summary>
+        <input id="discogs-token" type="password" placeholder="token pessoal" autocomplete="off" />
+        <small>Discogs › Settings › Developers › Generate new token. Fica salvo só neste navegador.</small>
+      </details>
+      <div class="progress" id="prog-discogs" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
+      <p class="summary" id="collection-summary" hidden></p>
+    </section>
+
+    <section class="card" id="step-platforms">
+      <div class="step-label"><span>Lado B</span> Plataformas</div>
+
+      <div class="platform" data-p="spotify">
+        <div class="pl-head">
+          <span class="dot sp"></span>
+          <strong>Spotify</strong>
+          <span class="pl-status" id="sp-status">desconectado</span>
+          <button class="btn small" id="btn-sp-connect">Conectar</button>
+        </div>
+        <div class="pl-actions">
+          <button class="btn" id="btn-sp-match" disabled>Analisar matches</button>
+          <button class="btn accent" id="btn-sp-sync" disabled>Atualizar playlist</button>
+        </div>
+        <div class="progress" id="prog-spotify" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
+        <p class="result-line" id="sp-result" hidden></p>
+      </div>
+
+      <div class="platform" data-p="youtube">
+        <div class="pl-head">
+          <span class="dot yt"></span>
+          <strong>YouTube Music</strong>
+          <span class="pl-status" id="yt-status">desconectado</span>
+          <button class="btn small" id="btn-yt-connect">Conectar</button>
+        </div>
+        <div class="quota" id="yt-quota" hidden>
+          <div class="qbar"><i></i></div>
+          <span class="qtext"></span>
+        </div>
+        <label class="check"><input type="checkbox" id="yt-tracksearch" /> Procurar faixas que faltarem uma a uma (gasta 100 unidades por faixa)</label>
+        <div class="pl-actions">
+          <button class="btn" id="btn-yt-match" disabled>Analisar matches</button>
+          <button class="btn accent" id="btn-yt-sync" disabled>Atualizar playlist</button>
+        </div>
+        <div class="progress" id="prog-youtube" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
+        <p class="result-line" id="yt-result" hidden></p>
+      </div>
+
+      <label class="check muted"><input type="checkbox" id="force" /> Refazer a análise ignorando o que já está salvo</label>
+    </section>
+
+    <section id="results" hidden>
+      <div class="seg" role="tablist">
+        <button role="tab" data-platform="spotify" class="on">Spotify</button>
+        <button role="tab" data-platform="youtube">YouTube</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="list-tools">
+        <input id="search" type="search" placeholder="filtrar por artista ou disco" />
+        <button class="btn small ghost" id="btn-csv">CSV</button>
+      </div>
+      <ul class="albums" id="albums"></ul>
+    </section>
+
+    <p class="log" id="log" hidden></p>
+  </main>
+
+  <footer>
+    Dados do <a href="https://www.discogs.com" target="_blank" rel="noopener">Discogs</a>. Os matches ficam salvos neste navegador.
+    <button class="linkish" id="btn-reset">Limpar dados salvos</button>
+  </footer>
+
+  <template id="tpl-album">
+    <li class="album">
+      <button class="a-head" type="button">
+        <img class="thumb" alt="" loading="lazy" />
+        <span class="a-meta">
+          <span class="a-title"></span>
+          <span class="a-artist"></span>
+          <span class="a-cov"></span>
+        </span>
+        <span class="badge"></span>
+      </button>
+      <div class="a-body" hidden>
+        <p class="a-match"></p>
+        <ol class="tracks"></ol>
+      </div>
+    </li>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
