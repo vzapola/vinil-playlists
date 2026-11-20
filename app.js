@@ -280,6 +280,24 @@ function renderSummary() {
   el.textContent = `${state.username}: ${state.albums.length} discos · ${tracks} faixas`;
 }
 
+/* ---------- playlist ---------- */
+// O id da playlist fica guardado depois da primeira criação. É ele que manda,
+// não o nome: assim você pode renomear a playlist dentro do Spotify sem que a
+// próxima atualização crie uma segunda. Mudar o nome aqui renomeia a de lá.
+const playlistName = () => $('#playlist-name').value.trim() || CONFIG.playlistName;
+const playlistPin = () => LS.get('vp.spPlaylist', null);
+
+function renderPlaylistHint() {
+  const el = $('#playlist-hint');
+  const pin = playlistPin();
+  if (!pin) return (el.textContent = 'Será criada com este nome na primeira atualização.');
+  const name = playlistName();
+  el.textContent =
+    pin.name === name
+      ? `Ligada a “${pin.name}”. Pode renomeá-la dentro do Spotify que a ligação continua.`
+      : `Ao atualizar, “${pin.name}” passa a se chamar “${name}”.`;
+}
+
 /* ---------- matching e sincronização ---------- */
 function matchFnFor(platform, yt) {
   if (platform === 'spotify') return (a, t, rel) => matchAlbumSpotify(a, t, sp, rel);
@@ -318,16 +336,24 @@ async function runSync(platform) {
   if (platform === 'spotify') {
     const results = await runMatch('spotify');
     progress('spotify', 0, 1, 'Atualizando a playlist…');
+    const pin = playlistPin();
+    const name = playlistName();
     const r = await syncSpotify({
       albums: state.albums,
       results,
       sp,
-      playlistName: CONFIG.playlistName,
+      playlistName: name,
       description: CONFIG.playlistDescription,
+      pinnedId: pin?.id,
+      rename: !!pin && pin.name !== name,
+      onPlaylist: (p) => {
+        LS.set('vp.spPlaylist', p);
+        renderPlaylistHint();
+      },
       onProgress: (i, n) => progress('spotify', i, n, `Adicionando ${i}/${n}`),
     });
     progress('spotify', 1, 1, 'Playlist atualizada.');
-    showResult('spotify', `${r.added} faixas novas adicionadas (${r.total} no total).`, r.url);
+    showResult('spotify', `${r.added} faixas novas em “${r.playlistName}” (${r.total} no total).`, r.url);
     return;
   }
   const yt = newYouTube();
@@ -336,7 +362,7 @@ async function runSync(platform) {
     cache: state.cache,
     yt,
     matchFn: matchFnFor('youtube', yt),
-    playlistName: CONFIG.playlistName,
+    playlistName: playlistName(),
     description: CONFIG.playlistDescription,
     onSave: saveCache,
     onResult: (a, res) => {
@@ -554,6 +580,11 @@ $('#sp-clientid').oninput = (e) => {
   LS.set('vp.spClientId', e.target.value.trim());
   log('');
 };
+$('#playlist-name').value = LS.get('vp.playlistName', '') || CONFIG.playlistName;
+$('#playlist-name').oninput = (e) => {
+  LS.set('vp.playlistName', e.target.value.trim());
+  renderPlaylistHint();
+};
 $('#form-discogs').onsubmit = (e) => {
   e.preventDefault();
   busy($('#btn-load'), loadCollection);
@@ -598,6 +629,7 @@ function setupPlatforms() {
 /* ---------- início ---------- */
 (async () => {
   setupPlatforms();
+  renderPlaylistHint();
   try {
     await spHandleRedirect();
   } catch (e) {

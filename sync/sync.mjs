@@ -75,8 +75,17 @@ async function main() {
     const sp = createSpotify({ getToken });
     const { results } = await matchAll({ platform: 'spotify', albums, cache, matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, rel) });
     await save();
-    const s = await syncSpotify({ albums, results, sp, playlistName: CONFIG.playlistName, description: CONFIG.playlistDescription });
-    out(`Spotify: **${s.added}** faixas novas na playlist (${s.total} no total). [Abrir](${s.url})\n`);
+    const s = await syncSpotify({
+      albums,
+      results,
+      sp,
+      playlistName: CONFIG.playlistName,
+      description: CONFIG.playlistDescription,
+      pinnedId: cache.playlist.spotify?.id,
+      onPlaylist: (p) => (cache.playlist.spotify = p),
+    });
+    await save();
+    out(`Spotify: **${s.added}** faixas novas em "${s.playlistName}" (${s.total} no total). [Abrir](${s.url})\n`);
     report('Spotify', albums, results);
   } else out('Spotify: pulado (SPOTIFY_REFRESH_TOKEN não definido).\n');
 

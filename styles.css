@@ -76,6 +76,10 @@ input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
 .opts small { display: block; }
 .opts code { font: 500 12px 'IBM Plex Mono', monospace; color: var(--ink); background: var(--bg2); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
 
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { color: var(--muted); font-size: 13px; font-weight: 500; }
+.field small { color: var(--muted); font-size: 12px; min-height: 1em; }
+
 .progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .bar, .qbar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }
 .bar i, .qbar i { display: block; height: 100%; width: 0; background: var(--label); transition: width 0.25s; }

@@ -10,6 +10,7 @@ export function initCache(data) {
   c.discogs ||= {};
   c.spotify ||= {};
   c.youtube ||= {};
+  c.playlist ||= {}; // { spotify: {id, name} } — fixa a playlist entre execuções
   return c;
 }
 
@@ -81,13 +82,18 @@ export function wantedIds(albums, results, field) {
 }
 
 // Spotify: só adiciona o que ainda não está na playlist (idempotente).
-export async function syncSpotify({ albums, results, sp, playlistName, description, onProgress }) {
-  const pl = await sp.findOrCreatePlaylist(playlistName, description);
+// pinnedId é o id guardado da playlist; com ele, renomear a playlist dentro do
+// Spotify não faz um segundo sync criar outra. onPlaylist devolve {id, name}
+// para quem chamou guardar.
+export async function syncSpotify({ albums, results, sp, playlistName, description, pinnedId, rename = false, onPlaylist, onProgress }) {
+  const pl = await sp.resolvePlaylist({ id: pinnedId, name: playlistName, description, rename });
+  const name = pl.name || playlistName;
+  onPlaylist?.({ id: pl.id, name });
   const existing = new Set(await sp.playlistUris(pl.id));
   const want = wantedIds(albums, results, 'uri');
   const missing = want.filter((u) => !existing.has(u));
   if (missing.length) await sp.addItems(pl.id, missing, onProgress);
-  return { playlistId: pl.id, url: pl.external_urls?.spotify || `https://open.spotify.com/playlist/${pl.id}`, added: missing.length, total: want.length };
+  return { playlistId: pl.id, playlistName: name, url: pl.external_urls?.spotify || `https://open.spotify.com/playlist/${pl.id}`, added: missing.length, total: want.length };
 }
 
 // YouTube: álbum a álbum, faz o matching (se precisar) e já insere as faixas.
