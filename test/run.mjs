@@ -199,6 +199,40 @@ await test('Pipeline: matchAll + syncSpotify idempotente', async () => {
   assert.equal(sp.playlist.items.length, 5);
 });
 
+// Um disco que não está na plataforma não pode custar duas buscas por faixa.
+await test('Spotify: disco ausente desiste depois de algumas faixas', async () => {
+  let buscas = 0;
+  const sp = {
+    async searchAlbums() { return []; },
+    async searchTracks() { buscas++; return []; },
+    async albumTracks() { return []; },
+  };
+  const a = toAlbum({ basic_information: { id: 11, master_id: 0, title: 'Disco Inexistente', artists: [{ name: 'Artista Obscuro' }] } });
+  const dtracks = Array.from({ length: 12 }, (_, i) => ({ position: `A${i + 1}`, title: `Faixa ${i + 1}`, artists: ['Artista Obscuro'] }));
+  const r = await matchAlbumSpotify(a, dtracks, sp, {});
+  assert.equal(r.status, 'none');
+  assert.ok(buscas <= 6, `12 faixas não podem custar 24 buscas (foram ${buscas})`);
+});
+
+// Estourado o limite, insistir nos outros 148 discos só gera erro e atrasa a
+// volta da cota.
+await test('Pipeline: 429 para a análise em vez de errar disco por disco', async () => {
+  const cache = initCache();
+  const albums = [1, 2, 3].map((n) => ({ key: `k${n}`, releaseId: n, artist: 'x', title: `t${n}`, artists: ['x'] }));
+  for (const a of albums) cache.discogs[a.releaseId] = { tracklist: [], barcode: null };
+  let chamadas = 0;
+  const matchFn = async () => {
+    chamadas++;
+    const e = new Error('Spotify 429: Too many requests');
+    e.status = 429;
+    throw e;
+  };
+  const { results, stopped } = await matchAll({ platform: 'spotify', albums, cache, matchFn });
+  assert.equal(chamadas, 1, 'para no primeiro disco, não varre os outros');
+  assert.ok(/429/.test(stopped), 'o motivo da parada precisa chegar à tela');
+  assert.equal(Object.keys(results).length, 0);
+});
+
 // Prepara coleção + matches para os testes de playlist fixada.
 async function syncFixture() {
   const cache = initCache();

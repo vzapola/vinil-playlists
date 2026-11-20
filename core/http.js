@@ -12,21 +12,31 @@ export class HttpError extends Error {
   }
 }
 
+// Teto do recuo exponencial. Sem ele, seis tentativas chegam a 48 s de espera
+// numa só chamada, e a página parece travada. Retry-After do servidor é
+// respeitado como vier, mesmo se for maior.
+const MAX_BACKOFF_MS = 20_000;
+
 // fetch com retry para 429 (rate limit) e 5xx.
-export async function fetchJson(url, opts = {}, { retries = 4, label = '' } = {}) {
+// onWait avisa quem chamou que vamos dormir, para dar notícia na tela.
+export async function fetchJson(url, opts = {}, { retries = 4, label = '', onWait } = {}) {
   for (let attempt = 0; ; attempt++) {
     let res;
     try {
       res = await fetch(url, opts);
     } catch (err) {
       if (attempt >= retries) throw err;
-      await sleep(1000 * 2 ** attempt);
+      const delay = Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);
+      onWait?.({ delay, attempt: attempt + 1, retries, status: 0, label });
+      await sleep(delay);
       continue;
     }
     if (res.status === 429 || res.status >= 500) {
       if (attempt >= retries) throw new HttpError(res.status, await safeBody(res), label);
       const ra = Number(res.headers.get('Retry-After'));
-      await sleep(ra ? ra * 1000 + 250 : 1500 * 2 ** attempt);
+      const delay = ra ? ra * 1000 + 250 : Math.min(1500 * 2 ** attempt, MAX_BACKOFF_MS);
+      onWait?.({ delay, attempt: attempt + 1, retries, status: res.status, label });
+      await sleep(delay);
       continue;
     }
     if (!res.ok) throw new HttpError(res.status, await safeBody(res), label);

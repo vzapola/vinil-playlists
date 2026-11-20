@@ -151,7 +151,11 @@ async function spGetToken() {
 
 const sp = createSpotify({
   getToken: spGetToken,
-  onThrottle: (gap) => log(`O Spotify pediu calma (429). Ritmo reduzido para ${gap} ms entre chamadas — a análise continua, só mais devagar.`),
+  onThrottle: (gap) => log(`Ritmo reduzido para ${gap} ms entre chamadas — a análise continua, só mais devagar.`),
+  onWait: ({ delay, attempt, retries, status }) => {
+    if (status !== 429) return;
+    log(`O Spotify pediu calma (429): esperando ${Math.round(delay / 1000)}s antes de tentar de novo (tentativa ${attempt} de ${retries}).`);
+  },
 });
 
 /* ---------- YouTube (Google Identity Services, token de 1h) ---------- */
@@ -311,6 +315,9 @@ function matchFnFor(platform, yt) {
 async function runMatch(platform) {
   log('');
   setPlatform(platform);
+  // Notícia desde o primeiro instante: o primeiro disco pode demorar, e um
+  // botão girando sem texto parece travado.
+  progress(platform, 0, state.albums.length, `0/${state.albums.length} · começando…`);
   const yt = platform === 'youtube' ? newYouTube() : null;
   const { results, stopped } = await matchAll({
     platform,
@@ -332,14 +339,14 @@ async function runMatch(platform) {
   const digest = errorDigest(platform);
   if (digest) log(digest);
   render();
-  return results;
+  return { results, stopped };
 }
 
 async function runSync(platform) {
   log('');
   setPlatform(platform);
   if (platform === 'spotify') {
-    const results = await runMatch('spotify');
+    const { results, stopped } = await runMatch('spotify');
     progress('spotify', 0, 1, 'Atualizando a playlist…');
     const pin = playlistPin();
     const name = playlistName();
@@ -357,8 +364,8 @@ async function runSync(platform) {
       },
       onProgress: (i, n) => progress('spotify', i, n, `Adicionando ${i}/${n}`),
     });
-    progress('spotify', 1, 1, 'Playlist atualizada.');
-    showResult('spotify', `${r.added} faixas novas em “${r.playlistName}” (${r.total} no total).`, r.url);
+    progress('spotify', 1, 1, stopped ? 'Playlist atualizada com o que deu tempo de analisar.' : 'Playlist atualizada.');
+    showResult('spotify', `${r.added} faixas novas em “${r.playlistName}” (${r.total} no total).${stopped ? ` ${stopped}` : ''}`, r.url);
     return;
   }
   const yt = newYouTube();

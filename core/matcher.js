@@ -91,7 +91,7 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
   }
 
   let best = null;
-  for (const c of [...cands.values()].sort((a, b) => b.score - a.score).slice(0, 3)) {
+  for (const c of [...cands.values()].sort((a, b) => b.score - a.score).slice(0, 2)) {
     const ctracks = await sp.albumTracks(c.it.id);
     const pairs = matchTracklist(discogsTracks, ctracks, (t) => t.name);
     const cov = discogsTracks.length ? pairs.filter(Boolean).length / discogsTracks.length : 1;
@@ -130,16 +130,23 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
   // usedIds impede que várias faixas do mesmo disco apontem para a mesma faixa
   // do Spotify — um 12" com seis remixes de uma música só casaria seis vezes
   // com ela e o disco apareceria como completo, o que seria mentira.
+  // Quando nem o álbum foi encontrado, varrer faixa a faixa custa caro e a
+  // cota do Spotify é curta. Se algumas faixas seguidas não aparecem, o disco
+  // provavelmente não está na plataforma: desiste e segue para o próximo.
+  const GIVE_UP_AFTER = 3;
   const usedIds = new Set(tracks.map((t) => t.match?.id).filter(Boolean));
+  let misses = 0;
   for (let i = 0; i < tracks.length; i++) {
     if (tracks[i].match) continue;
+    if (!best && misses >= GIVE_UP_AFTER) break;
     const dt = discogsTracks[i];
     const art = dt.artists.find((a) => !isVarious(a)) || primary;
     const hit = await findTrackElsewhere(sp, dt.title, art, album.title, best?.it.id, usedIds);
     if (hit) {
       tracks[i].match = hit;
       usedIds.add(hit.id);
-    }
+      misses = 0;
+    } else misses++;
   }
 
   return summarize('spotify', album, matchedAlbum, tracks);

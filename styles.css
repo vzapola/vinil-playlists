@@ -97,6 +97,8 @@ input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
 .dot.yt { background: var(--yt); }
 .pl-actions { display: flex; gap: 8px; margin-top: 10px; }
 .pl-actions .btn { flex: 1; }
+.act-hint { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.act-hint b { color: var(--ink); font-weight: 600; }
 .quota { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
 .qbar i { background: var(--yt); }
 .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; margin-top: 10px; color: var(--ink); }

@@ -6,12 +6,12 @@ const API = 'https://api.spotify.com/v1';
 // responde 429 e o disco inteiro vira erro, então as chamadas são espaçadas.
 // A cada 429 que escapa das retentativas o espaçamento dobra e não volta,
 // para a análise desacelerar sozinha em vez de insistir e falhar.
-const MIN_GAP_MS = 200;
+const MIN_GAP_MS = 350;
 const MAX_GAP_MS = 3000;
 
 // Endpoints válidos para apps em Development Mode após as mudanças de 2026:
 // POST /me/playlists, GET/POST /playlists/{id}/items, GET /search (limit máx. 10).
-export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle } = {}) {
+export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWait } = {}) {
   let gap = minGap;
   let last = 0;
 
@@ -25,7 +25,7 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle } = {}
     const headers = { Authorization: `Bearer ${token}` };
     if (body) headers['Content-Type'] = 'application/json';
     try {
-      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 6 });
+      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 6, onWait });
     } catch (e) {
       if (e.status === 429 && gap < MAX_GAP_MS) {
         gap = Math.min(gap * 2, MAX_GAP_MS);

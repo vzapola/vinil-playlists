@@ -50,6 +50,14 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
           stopped = e.message;
           break;
         }
+        // 429 que sobreviveu às retentativas: o limite do Spotify estourou.
+        // Insistir nos discos seguintes só produz mais erro e atrasa a volta
+        // da cota. O que já foi analisado está salvo e a próxima execução
+        // continua de onde parou.
+        if (e.status === 429) {
+          stopped = 'O Spotify limitou as chamadas (429). O que já foi analisado está salvo — espere uns minutos e rode de novo para continuar de onde parou.';
+          break;
+        }
         results[a.key] = errorResult(platform, a, e);
       }
       if (results[a.key].status !== 'error') cache[platform][a.key] = results[a.key];
