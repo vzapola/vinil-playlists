@@ -326,6 +326,8 @@ async function runMatch(platform) {
   const c = countStatuses(platform);
   const line = `${c.full} completos · ${c.partial} parciais · ${c.none} sem match${c.pending ? ` · ${c.pending} pendentes` : ''}`;
   showResult(platform, stopped ? `${line}. ${stopped}` : line);
+  const digest = errorDigest(platform);
+  if (digest) log(digest);
   render();
   return results;
 }
@@ -408,6 +410,21 @@ function countStatuses(platform) {
     c[s === 'error' ? 'none' : s]++;
   }
   return c;
+}
+
+// Erro de análise quase sempre é a mesma falha repetida (token, permissão,
+// endpoint). Sem isto, 149 discos viram 149 "erro na análise" sem motivo à vista.
+function errorDigest(platform) {
+  const msgs = new Map();
+  for (const a of state.albums) {
+    const r = resultOf(platform, a);
+    if (r?.status !== 'error') continue;
+    msgs.set(r.error, (msgs.get(r.error) || 0) + 1);
+  }
+  if (!msgs.size) return null;
+  const total = [...msgs.values()].reduce((s, n) => s + n, 0);
+  const [msg] = [...msgs.entries()].sort((a, b) => b[1] - a[1])[0];
+  return `Falhou em ${total} de ${state.albums.length} discos. Erro mais comum: ${msg}`;
 }
 
 function setPlatform(p) {

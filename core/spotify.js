@@ -35,7 +35,7 @@ export function createSpotify({ getToken }) {
     try {
       return await run(useMarket ? 'from_token' : null);
     } catch (e) {
-      if (!useMarket || e.status !== 400) throw e;
+      if (!useMarket || (e.status !== 400 && e.status !== 403)) throw e;
       useMarket = false;
       return run(null);
     }
