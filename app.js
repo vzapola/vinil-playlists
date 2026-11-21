@@ -537,7 +537,11 @@ function agendarAuto(ms, motivo) {
 
 async function cicloAuto() {
   if (!autoLigado() || autoRodando) return;
-  if (!state.spUser || !state.albums.length) return autoStatus('');
+  // Falhar calado aqui seria o pior dos mundos: a caixa marcada, a aba
+  // aberta o dia inteiro e nada acontecendo. Se a sessão caiu ou a coleção
+  // não foi carregada, o automático diz o que falta em vez de sumir.
+  if (!state.albums.length) return autoStatus('Esperando a coleção: clique em Buscar.');
+  if (!state.spUser) return agendarAuto(SONDA_ENTRE_LOTES_MS, 'Spotify desconectado — clique em Conectar');
 
   // Nada pendente: não há o que sondar, e sondar à toa gasta cota.
   const c = countStatuses('spotify');
