@@ -21,6 +21,15 @@ const DASH_NOISE = new RegExp(`\\s[-–—]\\s[^-–—]*(?:${NOISE_WORDS})[^-�
 
 const STOPWORDS = new Set(['the', 'a', 'o', 'os', 'as', 'e', 'and', 'de', 'da', 'do', 'das', 'dos', 'of', 'el', 'la', 'le', 'les']);
 
+// Abreviacoes que as duas pontas escrevem de jeitos diferentes: o Discogs
+// imprime a capa ("Dr. Robert"), o Spotify escreve por extenso ("Doctor
+// Robert"). Sem isso a similaridade cai para 0,67 e a faixa se perde.
+// Expandir dos dois lados mantem a comparacao justa.
+const ABBREV = {
+  dr: 'doctor', mr: 'mister', mrs: 'missus', st: 'saint', jr: 'junior', sr: 'senior',
+  vol: 'volume', pt: 'part', no: 'number', ft: 'featuring', feat: 'featuring', vs: 'versus',
+};
+
 // Remove acentos, ruídos de reedição, pontuação e stopwords.
 export function norm(s) {
   let t = stripAccents(s).toLowerCase();
@@ -28,8 +37,8 @@ export function norm(s) {
   t = t.replace(/&/g, ' and ');
   t = t.replace(/[^a-z0-9]+/g, ' ').trim();
   const tokens = t.split(/\s+/).filter(Boolean);
-  const kept = tokens.filter((w) => !STOPWORDS.has(w));
-  return (kept.length ? kept : tokens).join(' ');
+  const kept = tokens.filter((w) => !STOPWORDS.has(w)).map((w) => ABBREV[w] || w);
+  return (kept.length ? kept : tokens.map((w) => ABBREV[w] || w)).join(' ');
 }
 
 function bigrams(s) {

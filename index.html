@@ -68,6 +68,15 @@
           <small>Faz poucas chamadas avulsas e mostra o código de resposta cru de cada uma, sem retentativas. Serve para saber se o Spotify está bloqueando e em que ritmo ele aceita.</small>
           <pre class="diag" id="diag-out" hidden></pre>
         </details>
+        <label class="gap-row" for="sp-lote">
+          Discos por rodada:
+          <select id="sp-lote">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="0">todos</option>
+          </select>
+        </label>
         <div class="pl-actions">
           <button class="btn" id="btn-sp-match" disabled>Analisar matches</button>
           <button class="btn accent" id="btn-sp-sync" disabled>Atualizar playlist</button>
@@ -75,6 +84,7 @@
         <small class="act-hint">
           <b>Analisar matches</b> só monta o relatório: nada é escrito no Spotify.
           <b>Atualizar playlist</b> faz a mesma análise e, no fim, acrescenta à playlist as faixas que ainda não estão lá.
+          Cada rodada analisa só os discos do lote e guarda o resultado, então clicar de novo continua de onde parou.
         </small>
         <div class="progress" id="prog-spotify" hidden><div class="bar"><i></i></div><span class="ptext"></span></div>
         <p class="result-line" id="sp-result" hidden></p>

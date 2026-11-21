@@ -14,11 +14,16 @@ const MAX_GAP_MS = 3000;
 export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWait } = {}) {
   let gap = minGap;
   let last = 0;
+  // Contador de chamadas que realmente saíram. A cota do Spotify é opaca —
+  // nem a documentação diz o número —, então o mínimo é saber quanto a
+  // página gastou. Fica visível na tela em vez de virar palpite.
+  const stats = { calls: 0, searches: 0, cached: 0 };
 
   async function api(path, { method = 'GET', body, params } = {}) {
     const wait = last + gap - Date.now();
     if (wait > 0) await sleep(wait);
     last = Date.now();
+    stats.calls++;
     const token = await getToken();
     const u = new URL(path.startsWith('http') ? path : API + path);
     for (const [k, v] of Object.entries(params || {})) if (v != null) u.searchParams.set(k, v);
@@ -28,9 +33,17 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWai
       // Poucas retentativas de propósito: insistir contra um limitador é
       // bater numa porta que acabou de fechar, e cada insistência conta como
       // nova violação. Quem decide parar de vez é o matchAll, no primeiro 429.
-      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 2, onWait });
+      // Cada retentativa é outra requisição de verdade e pesa igual na cota:
+      // contar só a primeira daria um número bonito e falso.
+      const conta = (info) => {
+        stats.calls++;
+        onWait?.(info);
+      };
+      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 2, onWait: conta });
     } catch (e) {
-      if (e.status === 429 && gap < MAX_GAP_MS) {
+      // Só o 429 de ritmo pede freio. O de cota é saldo esgotado: ir mais
+      // devagar não devolve nada, e quem para é o matchAll, na hora.
+      if (e.status === 429 && !e.quotaExceeded && gap < MAX_GAP_MS) {
         gap = Math.min(gap * 2, MAX_GAP_MS);
         onThrottle?.(gap);
       }
@@ -61,7 +74,13 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWai
   const searchCache = new Map();
   async function search(q, type) {
     const key = `${type}\u0000${q}`;
-    if (!searchCache.has(key)) searchCache.set(key, await api('/search', { params: { q, type, limit: 10 } }));
+    if (searchCache.has(key)) {
+      stats.cached++;
+      return searchCache.get(key);
+    }
+    stats.searches++;
+    // limit máximo é 10 para apps em Development Mode desde fevereiro de 2026.
+    searchCache.set(key, await api('/search', { params: { q, type, limit: 10 } }));
     return searchCache.get(key);
   }
 
@@ -95,6 +114,7 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWai
 
   return {
     api,
+    stats,
     me,
     findOrCreatePlaylist,
     resolvePlaylist,
@@ -105,6 +125,12 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWai
     async searchTracks(q) {
       const r = await search(q, 'track');
       return r?.tracks?.items?.filter(Boolean) || [];
+    },
+    // Uma busca só, para testar se a cota voltou sem disparar a análise
+    // inteira. Custa exatamente uma chamada.
+    async ping() {
+      await api('/search', { params: { q: 'caetano veloso', type: 'album', limit: 1 } });
+      return true;
     },
     albumTracks: (id) => paginate(`/albums/${id}/tracks?limit=50`),
     async playlistUris(id) {

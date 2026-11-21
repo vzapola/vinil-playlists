@@ -317,10 +317,13 @@ function matchFnFor(platform, yt) {
   return (a, t) => matchAlbumYouTube(a, t, yt, { trackSearch });
 }
 
-/* ---------- espera depois de um bloqueio ---------- */
+/* ---------- espera depois de um bloqueio de ritmo ---------- */
+// Vale só para o 429 de ritmo, cuja janela a documentação descreve como 30
+// segundos corridos — aí esperar resolve mesmo. O 429 de cota é outro bicho e
+// não entra aqui: ninguém sabe quando a cota volta, então em vez de inventar
+// prazo a página oferece um teste de uma chamada só.
 // O Spotify não diz por quanto tempo bloqueou: o Retry-After não atravessa o
 // CORS. Então a espera é nossa — começa curta e cresce se o bloqueio insistir.
-// Uma hora concreta na tela vale mais que um "tente mais tarde" sem prazo.
 const ESPERAS_MIN = [15, 60, 180, 720];
 
 const esperaAtual = () => LS.get('vp.spCooldown', null);
@@ -339,6 +342,8 @@ function iniciarEspera() {
   return { until, min };
 }
 
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+
 function duracao(ms) {
   const min = Math.ceil(ms / 60000);
   if (min < 60) return `${min} min`;
@@ -350,6 +355,11 @@ function duracao(ms) {
 // "Refazer" é ação de uma vez só: a caixa se desmarca ao começar. Deixada
 // ligada, todo clique recomeçava do primeiro disco — e, com a cota curta do
 // Spotify, a análise morria sempre no mesmo ponto sem nunca alcançar o resto.
+// Tamanho do lote: quantos discos cada clique reanalisa. A cota do Spotify em
+// Development Mode não é publicada em lugar nenhum, então o número certo é o
+// que a conta aguentar — e quem descobre isso é você, clicando.
+const loteAtual = () => Number($('#sp-lote')?.value || 0);
+
 function takeForce() {
   const el = $('#force');
   const on = el.checked;
@@ -365,7 +375,7 @@ async function runMatch(platform) {
   // bloqueio é o que o prolonga.
   const resta = platform === 'spotify' ? esperaRestante() : 0;
   if (resta) {
-    const msg = `Em espera depois de um bloqueio do Spotify. Pode tentar de novo às ${hhmm(esperaAtual().until)} — faltam ${duracao(resta)}.`;
+    const msg = `Em espera depois de um bloqueio de ritmo do Spotify. Pode tentar de novo às ${hhmm(esperaAtual().until)} — faltam ${duracao(resta)}.`;
     progress(platform, 0, state.albums.length, 'Em espera — nenhuma chamada foi feita.');
     showResult(platform, msg, null, {
       label: 'Tentar mesmo assim',
@@ -379,14 +389,17 @@ async function runMatch(platform) {
 
   // Notícia desde o primeiro instante: o primeiro disco pode demorar, e um
   // botão girando sem texto parece travado.
+  const lote = platform === 'spotify' ? loteAtual() : 0;
+  const chamadas0 = sp.stats.calls;
   progress(platform, 0, state.albums.length, `0/${state.albums.length} · começando…`);
   const yt = platform === 'youtube' ? newYouTube() : null;
-  const { results, stopped: parada, analyzed, rateLimited, done } = await matchAll({
+  const { results, stopped: parada, analyzed, adiados, rateLimited, quota, done } = await matchAll({
     platform,
     albums: state.albums,
     cache: state.cache,
     matchFn: matchFnFor(platform, yt),
     force: takeForce(),
+    limit: lote,
     onSave: saveCache,
     onResult: (a, r) => {
       state.session[platform][a.key] = r;
@@ -399,28 +412,51 @@ async function runMatch(platform) {
   // Bloqueou: abre a janela de espera e diz a hora exata de voltar.
   // Passou inteiro: zera o histórico de bloqueios.
   let stopped = parada;
+  let acao = null;
   if (rateLimited) {
     const { until, min } = iniciarEspera();
     stopped = `${stopped} Tente de novo a partir das ${hhmm(until)} — ${min < 60 ? `${min} min` : duracao(min * 60000)} a partir de agora.`;
+  } else if (quota) {
+    // Cota não tem relógio conhecido: em vez de chutar um prazo, a página
+    // oferece o teste mais barato que existe — uma busca só.
+    stopped = `${stopped} Isso não é pressa: é o saldo de buscas do app, que o Spotify não publica nem dá prazo de volta. Diminuir o lote faz cada rodada caber no que sobrar.`;
+    acao = {
+      label: 'Testar se voltou (1 chamada)',
+      onClick: async () => {
+        showResult(platform, 'Testando…');
+        try {
+          await sp.ping();
+          showResult(platform, 'A busca respondeu 200: a cota voltou. Pode rodar.');
+        } catch (e) {
+          showResult(platform, `Ainda bloqueado — ${e.message}`, null, acao);
+        }
+      },
+    };
   } else if (platform === 'spotify' && !stopped) {
     limparEspera();
   }
+  // Lote cheio não é interrupção: terminou o que foi combinado.
+  const loteCheio = adiados && !stopped;
+  if (loteCheio) stopped = `${adiados === 1 ? 'Falta' : 'Faltam'} ${plural(adiados, 'disco', 'discos')}. Clique de novo para continuar de onde parou.`;
 
   // A linha de progresso tem que terminar contando o desfecho. Parada logo no
   // começo, ela ficava presa em "começando…", dizendo o oposto da mensagem de
   // erro logo abaixo.
   const n = state.albums.length;
+  const feitos = `${plural(analyzed, 'disco analisado', 'discos analisados')} nesta rodada`;
   progress(
     platform,
-    stopped ? done : n,
+    stopped && !loteCheio ? done : n,
     n,
-    stopped
-      ? `Interrompida · ${analyzed} ${analyzed === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada`
-      : `Análise concluída · ${n} discos`,
+    loteCheio ? `Lote concluído · ${feitos}` : stopped ? `Interrompida · ${feitos}` : `Análise concluída · ${n} discos`,
   );
   const c = countStatuses(platform);
-  const line = `${c.full} completos · ${c.partial} parciais · ${c.none} sem match${c.pending ? ` · ${c.pending} pendentes` : ''}`;
-  showResult(platform, stopped ? `${line}. ${stopped}` : line);
+  const gastas = sp.stats.calls - chamadas0;
+  const custo = platform === 'spotify' && gastas ? ` · ${gastas} ${gastas === 1 ? 'chamada' : 'chamadas'} ao Spotify` : '';
+  const line = `${plural(c.full, 'completo', 'completos')} · ${plural(c.partial, 'parcial', 'parciais')} · ${c.none} sem match${
+    c.pending ? ` · ${plural(c.pending, 'pendente', 'pendentes')}` : ''
+  }${custo}`;
+  showResult(platform, stopped ? `${line}. ${stopped}` : line, null, acao);
   const digest = errorDigest(platform);
   if (digest) log(digest);
   render();
@@ -742,8 +778,13 @@ async function runDiagnostic() {
     say(`   corpo: ${s.body}`);
     say('');
     if (s.status === 429) {
+      const cota = /QUOTA_EXCEEDED/i.test(s.body);
       say(me.status === 200 ? 'Perfil passa, busca é recusada: o limite é da busca, não da conta.' : 'Tudo recusado: o app está bloqueado agora.');
-      say('Enquanto durar, não há ajuste de código que resolva. Rode de novo mais tarde: quando /search voltar a dar 200, a análise funciona.');
+      say(
+        cota
+          ? 'reason=QUOTA_EXCEEDED: é saldo de app em Development Mode, não ritmo. Esperar minutos não devolve nada e cada chamada a mais só gasta. Reduza o lote e volte depois.'
+          : 'Sem QUOTA_EXCEEDED no corpo: é limite de ritmo, cuja janela é de 30 segundos corridos. Alguns minutos parados resolvem.',
+      );
     }
     return;
   }
@@ -795,6 +836,8 @@ $('#sp-gap').onchange = (e) => {
   LS.set('vp.spGap', v);
   log(`Ritmo salvo: ${v} ms. Recarregue a página para valer na próxima análise.`);
 };
+$('#sp-lote').value = String(LS.get('vp.spLote', '25'));
+$('#sp-lote').onchange = (e) => LS.set('vp.spLote', e.target.value);
 $('#btn-diag').onclick = (e) => busy(e.currentTarget, runDiagnostic);
 $('#btn-sp-connect').onclick = () => spLogin();
 $('#btn-yt-connect').onclick = () => ytLogin();

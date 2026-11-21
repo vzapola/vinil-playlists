@@ -7,8 +7,16 @@ export class HttpError extends Error {
     this.status = status;
     this.body = body;
   }
+  // O YouTube poe o motivo em error.errors[].reason; o Spotify, em error.reason.
+  // Ler os dois e o que separa "voce correu demais" de "sua cota acabou".
   get reason() {
-    return this.body?.error?.errors?.[0]?.reason || this.body?.error?.status || '';
+    return this.body?.error?.errors?.[0]?.reason || this.body?.error?.reason || '';
+  }
+  // Cota de app em Development Mode. E um 429, mas de outra natureza: nao e
+  // ritmo, e saldo. Esperar segundos nao devolve nada e cada nova tentativa
+  // so gasta mais. Documentado em concepts/quota-modes.
+  get quotaExceeded() {
+    return this.status === 429 && /QUOTA_EXCEEDED/i.test(String(this.reason || this.body?.error?.message || ''));
   }
 }
 
@@ -33,13 +41,11 @@ export async function fetchJson(url, opts = {}, { retries = 4, label = '', onWai
     }
     if (res.status === 429 || res.status >= 500) {
       const ra = Number(res.headers.get('Retry-After'));
-      if (attempt >= retries) {
-        const err = new HttpError(res.status, await safeBody(res), label);
-        // Quanto o servidor pediu de espera: vira instrução concreta na tela,
-        // em vez de um "tente mais tarde" que não diz quando.
-        if (ra > 0) err.retryAfter = ra;
-        throw err;
-      }
+      const err = new HttpError(res.status, await safeBody(res), label);
+      if (ra > 0) err.retryAfter = ra;
+      // Cota estourada não se resolve insistindo: devolve na hora, sem gastar
+      // as retentativas num saldo que só volta com o tempo.
+      if (err.quotaExceeded || attempt >= retries) throw err;
       const delay = ra ? ra * 1000 + 250 : Math.min(1500 * 2 ** attempt, MAX_BACKOFF_MS);
       onWait?.({ delay, attempt: attempt + 1, retries, status: res.status, label });
       await sleep(delay);

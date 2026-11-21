@@ -6,6 +6,7 @@ import { toAlbum, parseTracklist } from '../core/discogs.js';
 import { initCache, matchAll, syncSpotify, syncYouTube } from '../core/pipeline.js';
 import { createYouTube, QuotaExhausted } from '../core/youtube.js';
 import { createSpotify } from '../core/spotify.js';
+import { HttpError } from '../core/http.js';
 
 let pass = 0;
 const test = async (name, fn) => {
@@ -37,6 +38,14 @@ await test('sufixo de versão não derruba o pareamento', () => {
 await test('título base não atropela discos diferentes', () => {
   assert.ok(titleSim('Clube Da Esquina', 'Clube Da Esquina 2') < 0.8);
   assert.ok(titleSim('Construção', 'Cotidiano') < 0.5);
+});
+// O Discogs imprime a capa ("Dr. Robert"); o Spotify escreve por extenso.
+// Sem expandir, a faixa ficava de fora de um Revolver que existe inteiro lá.
+await test('abreviação escrita de dois jeitos é a mesma faixa', () => {
+  assert.ok(titleSim('Dr. Robert', 'Doctor Robert - Remastered 2009') >= 0.95);
+  assert.ok(titleSim('St. Louis Blues', 'Saint Louis Blues') >= 0.95);
+  assert.ok(titleSim('Rock Pt. 2', 'Rock Part 2') >= 0.95);
+  assert.ok(titleSim('Dr. Robert', 'Doctor Who') < 0.8, 'expandir não pode colar coisas diferentes');
 });
 await test('artista Discogs com sufixo e nome longo', () => {
   assert.ok(artistSim('Jorge Ben (2)', 'Jorge Ben') > 0.95);
@@ -353,6 +362,86 @@ await test('YouTube: para quando a cota acaba e retoma depois', async () => {
   assert.equal(r2.added, 3);
   assert.equal(inserted.length, 5);
   assert.equal(yt.quota.used, 2 + 150); // cache evitou nova busca
+});
+
+// Dois 429 diferentes: ritmo (janela de 30 s, esperar resolve) e cota de app
+// em Development Mode (saldo, esperar minutos não devolve nada). Tratar os
+// dois igual foi o que fez a página mandar esperar 15 min por nada.
+await test('Pipeline: cota esgotada não é confundida com excesso de ritmo', async () => {
+  const cache = initCache();
+  const albums = [1, 2].map((n) => ({ key: `k${n}`, releaseId: n, artist: 'x', title: `t${n}`, artists: ['x'] }));
+  for (const a of albums) cache.discogs[a.releaseId] = { tracklist: [], barcode: null };
+  const matchFn = async () => {
+    throw new HttpError(429, { error: { status: 429, message: 'Too many requests', reason: 'QUOTA_EXCEEDED' } }, 'Spotify');
+  };
+  const { stopped, quota, rateLimited } = await matchAll({ platform: 'spotify', albums, cache, matchFn });
+  assert.equal(quota, true);
+  assert.equal(rateLimited, false, 'cota não pode abrir a janela de espera por ritmo');
+  assert.ok(/QUOTA_EXCEEDED/.test(stopped), 'o motivo cru precisa aparecer, não um palpite');
+});
+
+await test('HTTP: cota esgotada não gasta retentativa', async () => {
+  const antes = globalThis.fetch;
+  let tentativas = 0;
+  globalThis.fetch = async () => {
+    tentativas++;
+    return new Response(JSON.stringify({ error: { status: 429, message: 'Too many requests', reason: 'QUOTA_EXCEEDED' } }), {
+      status: 429,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  try {
+    const sp = createSpotify({ getToken: async () => 't', minGap: 0 });
+    await assert.rejects(() => sp.api('/search'), (e) => e.quotaExceeded === true);
+    assert.equal(tentativas, 1, 'insistir contra cota esgotada só gasta mais cota');
+  } finally {
+    globalThis.fetch = antes;
+  }
+});
+
+// Com a cota curta, varrer 149 discos de uma vez era o jeito mais rápido de
+// nunca terminar nenhum. O lote faz cada clique avançar um pedaço.
+await test('Pipeline: lote analisa só o combinado e guarda o resto', async () => {
+  const cache = initCache();
+  const albums = [1, 2, 3, 4, 5].map((n) => ({ key: `k${n}`, releaseId: n, artist: 'x', title: `t${n}`, artists: ['x'] }));
+  for (const a of albums) cache.discogs[a.releaseId] = { tracklist: [], barcode: null };
+  let chamou = 0;
+  const matchFn = async (a) => {
+    chamou++;
+    return { platform: 'spotify', key: a.key, status: 'full', tracks: [], found: 0, total: 0, checkedAt: Date.now(), mv: MATCHER_VERSION };
+  };
+  const r1 = await matchAll({ platform: 'spotify', albums, cache, matchFn, limit: 2 });
+  assert.equal(chamou, 2, 'o lote vale');
+  assert.equal(r1.analyzed, 2);
+  assert.equal(r1.adiados, 3);
+
+  const r2 = await matchAll({ platform: 'spotify', albums, cache, matchFn, limit: 2 });
+  assert.equal(chamou, 4, 'a rodada seguinte continua de onde parou, sem refazer');
+  assert.equal(r2.adiados, 1);
+
+  await matchAll({ platform: 'spotify', albums, cache, matchFn, limit: 2 });
+  assert.equal(chamou, 5, 'o último disco fecha a coleção');
+});
+
+// Número medido no cache real da coleção: um disco que não existe no Spotify
+// custava 8,3 chamadas e passou a custar 3. Com 149 discos, é a diferença
+// entre 1231 e 555 chamadas por varredura completa.
+await test('Spotify: disco ausente cabe num orçamento pequeno de chamadas', async () => {
+  let buscas = 0;
+  const ruido = (n) => Array.from({ length: 10 }, (_, i) => ({
+    id: 'x' + i, uri: 'u' + i, name: n + i, artists: [{ name: 'Outro ' + i }],
+    album: { id: 'z' + i, name: 'Outro' }, external_urls: {}, images: [],
+  }));
+  const sp = {
+    searchAlbums: async () => (buscas++, ruido('Album ')),
+    searchTracks: async () => (buscas++, ruido('Faixa ')),
+    albumTracks: async () => [],
+  };
+  const album = { key: 'k', title: 'Disco Que Nao Existe', artists: ['Artista Inexistente'] };
+  const tl = Array.from({ length: 10 }, (_, i) => ({ position: 'A' + i, title: 'Faixa ' + i, artists: ['Artista Inexistente'] }));
+  const r = await matchAlbumSpotify(album, tl, sp, {});
+  assert.equal(r.status, 'none');
+  assert.ok(buscas <= 4, `um disco ausente não pode custar ${buscas} buscas`);
 });
 
 console.log(`\n${pass} testes passaram`);

@@ -7,7 +7,7 @@ export const TH = { track: 0.85, title: 0.8, artist: 0.75 };
 // alcança sozinha o que já estava salvo, um pedaço por execução, sem obrigar
 // o "refazer tudo" — que, com a cota curta do Spotify, nunca chegava ao fim.
 // Suba este número sempre que o matching mudar de comportamento.
-export const MATCHER_VERSION = 2;
+export const MATCHER_VERSION = 3;
 
 const q = (s) => String(s ?? '').replace(/"/g, '').trim();
 
@@ -95,7 +95,11 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
       const ok = (tS >= TH.title && aS >= TH.artist) || (viaUpc && aS >= 0.6);
       if (ok) cands.set(it.id, { it, score: tS * 0.6 + aS * 0.4 + (viaUpc ? 0.2 : 0) + (it.album_type === 'album' ? 0.02 : 0) });
     }
-    if (cands.size) break;
+    // O código de barras é identidade, não palpite: se ele devolveu disco,
+    // não há consulta melhor a fazer. Fora isso, a busca com filtro e a busca
+    // solta se complementam (título com pontuação estranha só aparece na
+    // segunda), então vale a chamada extra.
+    if (cands.size || (viaUpc && items.length)) break;
   }
 
   let best = null;
@@ -141,12 +145,19 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode } = 
   // Quando nem o álbum foi encontrado, varrer faixa a faixa custa caro e a
   // cota do Spotify é curta. Se algumas faixas seguidas não aparecem, o disco
   // provavelmente não está na plataforma: desiste e segue para o próximo.
-  const GIVE_UP_AFTER = 3;
+  const GIVE_UP_AFTER = 2;
+  const MAX_LOOKUPS = 8;
   const usedIds = new Set(tracks.map((t) => t.match?.id).filter(Boolean));
   let misses = 0;
+  let lookups = 0;
   for (let i = 0; i < tracks.length; i++) {
     if (tracks[i].match) continue;
     if (!best && misses >= GIVE_UP_AFTER) break;
+    // Teto por disco mesmo quando o álbum foi achado: um LP de 20 faixas com
+    // meia tracklist faltando gastaria sozinho dezenas de buscas, e a cota é
+    // de todos os discos. O que sobrar volta na próxima rodada.
+    if (lookups >= MAX_LOOKUPS) break;
+    lookups++;
     const dt = discogsTracks[i];
     const art = dt.artists.find((a) => !isVarious(a)) || primary;
     const hit = await findTrackElsewhere(sp, dt.title, art, album.title, best?.it.id, usedIds);
@@ -175,6 +186,9 @@ async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId,
       if (e.status === 400 || e.status === 404) continue;
       throw e;
     }
+    // Mesma regra dos álbuns: se o Spotify devolveu faixas e nenhuma passou,
+    // repetir com a frase solta é gastar chamada no mesmo catálogo.
+    const vazio = items.length === 0;
     let best = null;
     for (const t of items) {
       if (t.album?.id === excludeAlbumId || usedIds.has(t.id)) continue;
@@ -186,6 +200,7 @@ async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId,
       if (!best || score > best.score) best = { t, score };
     }
     if (best) return spTrack(best.t, best.t.album?.name || '', 'other');
+    if (!vazio) break;
   }
   return null;
 }

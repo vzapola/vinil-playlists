@@ -37,17 +37,26 @@ export async function loadTracklists({ albums, discogs, cache, onProgress, onSav
 }
 
 // Roda o matching álbum a álbum, reaproveitando o cache.
-// Se a cota do YouTube acabar, para e devolve o que já tem (stopped: true).
-export async function matchAll({ platform, albums, cache, matchFn, force = false, onResult, onProgress, onSave }) {
+// limit é o tamanho do lote: quantos discos esta rodada pode analisar de novo.
+// A cota do Spotify em Development Mode é curta e opaca, então varrer a
+// coleção inteira de uma vez é o jeito mais rápido de não terminar nenhuma
+// vez. Com lote, cada clique avança um pedaço e o progresso fica salvo.
+export async function matchAll({ platform, albums, cache, matchFn, force = false, limit = 0, onResult, onProgress, onSave }) {
   const results = {};
   let stopped = null;
   let analyzed = 0; // só os que passaram pelo matcher, sem contar os reaproveitados
+  let adiados = 0; // ficaram para a próxima rodada por causa do lote
   let rateLimited = false;
+  let quota = false;
   for (let i = 0; i < albums.length; i++) {
     const a = albums[i];
     const cached = cache[platform][a.key];
     if (!force && isFresh(cached, platform)) {
       results[a.key] = cached;
+    } else if (limit && analyzed >= limit) {
+      // Fora do lote: mostra o que já havia salvo, sem gastar chamada.
+      if (cached) results[a.key] = cached;
+      adiados++;
     } else {
       const rel = cache.discogs[a.releaseId] || { tracklist: [], barcode: null };
       try {
@@ -58,20 +67,21 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
           stopped = e.message;
           break;
         }
-        // 429 que sobreviveu às retentativas: o limite do Spotify estourou.
-        // Insistir nos discos seguintes só produz mais erro e atrasa a volta
-        // da cota. O que já foi analisado está salvo e a próxima execução
-        // continua de onde parou.
         if (e.status === 429) {
-          // Sem prometer prazo: o Retry-After do Spotify não chega ao
-          // navegador (não vem em Access-Control-Expose-Headers). Quem diz
-          // quando voltar é a espera que a própria página controla.
-          const pedido = e.retryAfter ? ` O Spotify pediu ${waitLabel(e.retryAfter)} de espera.` : '';
           const feitos = analyzed
             ? `${analyzed} ${analyzed === 1 ? 'disco analisado' : 'discos analisados'} nesta rodada, já salvos.`
             : 'Nenhum disco chegou a ser analisado nesta rodada.';
-          stopped = `O Spotify limitou as chamadas (429).${pedido} ${feitos}`;
-          rateLimited = true;
+          // Dois 429 diferentes. O de cota ("QUOTA_EXCEEDED") é saldo de app
+          // em Development Mode: não é pressa, e esperar minutos não devolve
+          // nada. O outro é ritmo, e aí esperar resolve.
+          if (e.quotaExceeded) {
+            quota = true;
+            stopped = `A cota de buscas do app do Spotify acabou (429 QUOTA_EXCEEDED). ${feitos}`;
+          } else {
+            rateLimited = true;
+            const pedido = e.retryAfter ? ` O Spotify pediu ${waitLabel(e.retryAfter)} de espera.` : '';
+            stopped = `O Spotify limitou o ritmo das chamadas (429).${pedido} ${feitos}`;
+          }
           break;
         }
         results[a.key] = errorResult(platform, a, e);
@@ -79,10 +89,10 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
       if (results[a.key].status !== 'error') cache[platform][a.key] = results[a.key];
       onSave?.();
     }
-    onResult?.(a, results[a.key]);
+    if (results[a.key]) onResult?.(a, results[a.key]);
     onProgress?.(i + 1, albums.length, a);
   }
-  return { results, stopped, analyzed, rateLimited, done: Object.keys(results).length };
+  return { results, stopped, analyzed, adiados, rateLimited, quota, done: Object.keys(results).length };
 }
 
 function waitLabel(seconds) {
