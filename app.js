@@ -495,9 +495,16 @@ async function runSync(platform) {
       },
       onProgress: (i, n) => progress('spotify', i, n, `Adicionando ${i}/${n}`),
     });
-    progress('spotify', 1, 1, stopped ? 'Playlist atualizada com o que já estava casado.' : 'Playlist atualizada.');
-    const add = r.added === 1 ? '1 faixa nova' : `${r.added} faixas novas`;
-    showResult('spotify', `${add} em “${r.playlistName}” (${r.total} no total).${stopped ? ` ${stopped}` : ''}`, r.url);
+    // "0 faixas novas (524 no total)" lia como fracasso e era o oposto: a
+    // playlist já estava inteira. Quando não falta nada, a frase tem que
+    // dizer que está em dia, não contar um zero.
+    const emDia = r.added === 0 && r.total > 0;
+    progress('spotify', 1, 1, emDia ? 'Playlist já estava em dia.' : stopped ? 'Playlist atualizada com o que já estava casado.' : 'Playlist atualizada.');
+    const novas = r.added === 1 ? '1 faixa nova' : `${r.added} faixas novas`;
+    const msg = emDia
+      ? `“${r.playlistName}” já tem as ${r.total} faixas que conseguimos casar até agora — nada a acrescentar.`
+      : `${novas} em “${r.playlistName}” (${r.total} no total).`;
+    showResult('spotify', `${msg}${stopped ? ` ${stopped}` : ''}`, r.url);
     return;
   }
   const yt = newYouTube();
