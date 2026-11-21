@@ -92,7 +92,20 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
     if (results[a.key]) onResult?.(a, results[a.key]);
     onProgress?.(i + 1, albums.length, a);
   }
-  return { results, stopped, analyzed, adiados, rateLimited, quota, done: Object.keys(results).length };
+  // Parou no meio, ou o lote não alcançou o fim: o que já estava salvo continua
+  // valendo para montar a playlist, mesmo vindo de uma versão anterior do
+  // matcher. Melhorar o matching não pode fazer a playlist regredir, e uma
+  // cota esgotada numa busca não é motivo para não escrever o que já se sabe.
+  let reaproveitados = 0;
+  for (const a of albums) {
+    if (results[a.key]) continue;
+    const c = cache[platform][a.key];
+    if (c) {
+      results[a.key] = c;
+      reaproveitados++;
+    }
+  }
+  return { results, stopped, analyzed, adiados, reaproveitados, rateLimited, quota, done: Object.keys(results).length };
 }
 
 function waitLabel(seconds) {

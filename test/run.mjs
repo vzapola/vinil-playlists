@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { titleSim, artistSim, norm } from '../core/normalize.js';
 import { matchAlbumSpotify, matchAlbumYouTube, MATCHER_VERSION } from '../core/matcher.js';
 import { toAlbum, parseTracklist } from '../core/discogs.js';
-import { initCache, matchAll, syncSpotify, syncYouTube } from '../core/pipeline.js';
+import { initCache, matchAll, syncSpotify, syncYouTube, wantedIds } from '../core/pipeline.js';
 import { createYouTube, QuotaExhausted } from '../core/youtube.js';
 import { createSpotify } from '../core/spotify.js';
 import { HttpError } from '../core/http.js';
@@ -442,6 +442,30 @@ await test('Spotify: disco ausente cabe num orçamento pequeno de chamadas', asy
   const r = await matchAlbumSpotify(album, tl, sp, {});
   assert.equal(r.status, 'none');
   assert.ok(buscas <= 4, `um disco ausente não pode custar ${buscas} buscas`);
+});
+
+// Busca e playlist são baldes de cota diferentes: a primeira pode estar
+// esgotada e a segunda viva. Perder o que já estava casado por causa disso
+// deixava a coleção meio resolvida sem nenhuma playlist para ouvir.
+await test('Pipeline: 429 na análise não apaga o que já estava casado', async () => {
+  const cache = initCache();
+  const albums = [1, 2, 3].map((n) => ({ key: `k${n}`, releaseId: n, artist: 'x', title: `t${n}`, artists: ['x'] }));
+  for (const a of albums) cache.discogs[a.releaseId] = { tracklist: [], barcode: null };
+  // salvos por uma versão anterior do matcher: velhos para reanálise, bons para tocar
+  for (const a of albums.slice(1)) {
+    cache.spotify[a.key] = {
+      platform: 'spotify', key: a.key, status: 'full', mv: MATCHER_VERSION - 1, checkedAt: Date.now(), found: 1, total: 1,
+      tracks: [{ position: 'A1', title: 'f', match: { id: 'id' + a.key, uri: 'spotify:track:' + a.key, name: 'f', source: 'album' } }],
+    };
+  }
+  const matchFn = async () => {
+    throw new HttpError(429, { error: { status: 429, message: 'Too many requests', reason: 'QUOTA_EXCEEDED' } }, 'Spotify');
+  };
+  const { results, quota, reaproveitados } = await matchAll({ platform: 'spotify', albums, cache, matchFn });
+  assert.equal(quota, true);
+  assert.equal(reaproveitados, 2, 'os dois que tinham cache entram; o que nunca foi analisado não inventa resultado');
+  const uris = wantedIds(albums, results, 'uri');
+  assert.deepEqual(uris, ['spotify:track:k2', 'spotify:track:k3'], 'o que já estava casado tem de chegar à playlist');
 });
 
 console.log(`\n${pass} testes passaram`);

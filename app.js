@@ -467,12 +467,15 @@ async function runSync(platform) {
   log('');
   setPlatform(platform);
   if (platform === 'spotify') {
-    const { results, stopped, analyzed } = await runMatch('spotify');
-    // Parou sem conseguir analisar nada: mexer na playlist agora só renderia
-    // mais 429 e esconderia o motivo da parada. A linha de progresso que
-    // runMatch deixou já conta o desfecho, então não se mexe nela aqui.
-    if (stopped && !analyzed) {
-      showResult('spotify', `Nada foi escrito na playlist. ${stopped}`);
+    const { results, stopped } = await runMatch('spotify');
+    // A análise e a escrita usam baldes de cota diferentes: a busca pode estar
+    // esgotada e a playlist, viva. Então o que já foi casado em rodadas
+    // anteriores vai para a playlist mesmo quando a análise de hoje nem
+    // começou — era isso que deixava uma coleção meio resolvida sem nenhuma
+    // playlist para ouvir.
+    const casadas = Object.values(results).reduce((n, r) => n + (r?.tracks || []).filter((t) => t.match).length, 0);
+    if (!casadas) {
+      showResult('spotify', `Nada para escrever na playlist ainda. ${stopped || ''}`.trim());
       return;
     }
     progress('spotify', 0, 1, 'Atualizando a playlist…');
@@ -492,8 +495,9 @@ async function runSync(platform) {
       },
       onProgress: (i, n) => progress('spotify', i, n, `Adicionando ${i}/${n}`),
     });
-    progress('spotify', 1, 1, stopped ? 'Playlist atualizada com o que deu tempo de analisar.' : 'Playlist atualizada.');
-    showResult('spotify', `${r.added} faixas novas em “${r.playlistName}” (${r.total} no total).${stopped ? ` ${stopped}` : ''}`, r.url);
+    progress('spotify', 1, 1, stopped ? 'Playlist atualizada com o que já estava casado.' : 'Playlist atualizada.');
+    const add = r.added === 1 ? '1 faixa nova' : `${r.added} faixas novas`;
+    showResult('spotify', `${add} em “${r.playlistName}” (${r.total} no total).${stopped ? ` ${stopped}` : ''}`, r.url);
     return;
   }
   const yt = newYouTube();
@@ -771,7 +775,7 @@ async function runDiagnostic() {
   // endpoints vão para baldes e cada balde tem seu limite. Então a pergunta
   // útil não é "estou bloqueado?", é "o que ainda responde?". Se a busca
   // estiver morta mas álbum e playlist vivos, existe caminho sem busca.
-  const pl = LS.get('vp.playlist', {})?.spotify?.id;
+  const pl = playlistPin()?.id;
   const baldes = [
     ['perfil   ', '/me'],
     ['busca    ', '/search?q=caetano&type=album&limit=1'],
