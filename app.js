@@ -73,6 +73,11 @@ async function busy(btn, fn) {
     log(friendlyError(e));
   } finally {
     btn.classList.remove('busy');
+    // Devolve o botão clicado antes de refreshButtons, que só conhece os
+    // quatro de plataforma: "Buscar" e "Medir agora" ficavam desabilitados
+    // para sempre depois do primeiro clique, e o diagnóstico só rodava uma
+    // vez por carregamento de página.
+    btn.disabled = false;
     refreshButtons();
   }
 }
@@ -746,6 +751,16 @@ function exportCsv() {
 }
 
 /* ---------- diagnóstico ---------- */
+const carimbo = (t) => new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+function registrarSonda(r) {
+  const h = LS.get('vp.spSondas', []);
+  h.push({ t: Date.now(), s: r?.status ?? 0, c: /QUOTA_EXCEEDED/i.test(r?.body || '') });
+  const corte = h.slice(-30);
+  LS.set('vp.spSondas', corte);
+  return corte;
+}
+
 // Chamada avulsa: sem freio, sem retentativa, só para ler o código cru.
 // O navegador não enxerga o cabeçalho Retry-After (o Spotify não o expõe por
 // CORS), então o que dá para medir daqui é status, corpo e tempo.
@@ -803,15 +818,35 @@ async function runDiagnostic() {
     await new Promise((r2) => setTimeout(r2, 400));
   }
 
+  // A única pergunta em aberto do projeto é quando a cota de busca volta, e a
+  // documentação não responde. Guardar cada sondagem transforma cliques
+  // avulsos em série temporal: é assim que a resposta aparece sozinha.
+  const hist = registrarSonda(busca);
+  if (hist.length > 1) {
+    say('');
+    say('sondagens da busca:');
+    for (const h of hist.slice(-8)) say(`  ${carimbo(h.t)}  ${h.s}${h.c ? ' COTA' : ''}`);
+    const ultimaOk = [...hist].reverse().find((h) => h.s === 200);
+    if (busca?.status !== 200) {
+      say(ultimaOk ? `  última vez que respondeu: ${carimbo(ultimaOk.t)} (há ${duracao(Date.now() - ultimaOk.t)})` : '  ainda não respondeu nenhuma vez por aqui');
+    } else {
+      const bloqueio = [...hist].reverse().find((h) => h.s === 429);
+      if (bloqueio) say(`  voltou — estava bloqueada ainda às ${carimbo(bloqueio.t)}`);
+    }
+  }
+
   say('');
   if (busca?.status === 429) {
     const cota = /QUOTA_EXCEEDED/i.test(busca.body);
     say(cota ? 'A busca está sem cota (QUOTA_EXCEEDED).' : 'A busca levou limite de ritmo (janela de 30 s).');
     say(vivos.length ? `Ainda respondem: ${vivos.join(', ')}.` : 'Nada respondeu: o app está bloqueado por inteiro.');
-    if (cota && vivos.some((v) => v === 'álbum')) {
+    if (cota && vivos.some((v) => v === 'playlists')) {
       say('');
-      say('Álbum responde e busca não: dá para montar a playlist sem usar /search,');
-      say('resolvendo o id do disco fora do Spotify. Me mande estas linhas.');
+      say('A playlist não depende da busca: "Atualizar playlist" escreve o que');
+      say('já está casado. Para os discos ainda não analisados não há atalho —');
+      say('descobrir o id fora do Spotify foi medido e o MusicBrainz não cobre');
+      say('esta coleção. Meça de novo mais tarde; o histórico acima vai mostrar');
+      say('a hora em que a busca voltar.');
     }
     return;
   }
