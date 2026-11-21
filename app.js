@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { createDiscogs } from './core/discogs.js';
 import { createSpotify } from './core/spotify.js';
 import { createYouTube } from './core/youtube.js';
-import { matchAlbumSpotify, matchAlbumYouTube } from './core/matcher.js';
+import { matchAlbumSpotify, matchAlbumYouTube, MATCHER_VERSION } from './core/matcher.js';
 import { initCache, loadTracklists, matchAll, syncSpotify, syncYouTube } from './core/pipeline.js';
 
 const $ = (s) => document.querySelector(s);
@@ -349,8 +349,8 @@ function renderPlaylistHint() {
 }
 
 /* ---------- matching e sincronização ---------- */
-function matchFnFor(platform, yt) {
-  if (platform === 'spotify') return (a, t, rel) => matchAlbumSpotify(a, t, sp, rel);
+function matchFnFor(platform, yt, esforco = 'completo') {
+  if (platform === 'spotify') return (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, barato: esforco === 'barato' });
   const trackSearch = $('#yt-tracksearch').checked;
   return (a, t) => matchAlbumYouTube(a, t, yt, { trackSearch });
 }
@@ -405,7 +405,10 @@ function takeForce() {
   return on;
 }
 
-async function runMatch(platform) {
+// esforco 'barato' gasta uma busca por disco em vez de até quatro. É o que o
+// modo automático usa na primeira varredura: com a cota fechando sem aviso,
+// alcançar 149 discos vale mais que esgotar cada um deles.
+async function runMatch(platform, { esforco = 'completo' } = {}) {
   log('');
   setPlatform(platform);
 
@@ -435,9 +438,10 @@ async function runMatch(platform) {
     platform,
     albums: state.albums,
     cache: state.cache,
-    matchFn: matchFnFor(platform, yt),
+    matchFn: matchFnFor(platform, yt, esforco),
     force: takeForce(),
     limit: lote,
+    esforco,
     onSave: saveCache,
     onResult: (a, r) => {
       state.session[platform][a.key] = r;
@@ -501,11 +505,88 @@ async function runMatch(platform) {
   return { results, stopped, analyzed };
 }
 
-async function runSync(platform) {
+/* ---------- modo automático ---------- */
+// O problema nunca foi clicar: é que a cota de busca do Spotify volta a uma
+// hora que ninguém publica, e perder a janela custa mais um dia. Com a aba
+// aberta, a página espera por você: sonda de meia em meia hora ao preço de
+// uma chamada e, quando a busca responde, emenda lotes até fechar a coleção
+// ou levar bloqueio de novo. Não precisa de token, secret nem nada no GitHub
+// — usa a conexão que já está aqui.
+const SONDA_BLOQUEADO_MS = 30 * 60e3; // cota fechada: espera longa, custo 1 chamada
+const SONDA_ENTRE_LOTES_MS = 60e3; // cota aberta: emenda o próximo lote
+
+let autoTimer = null;
+let autoRodando = false;
+
+const autoLigado = () => $('#sp-auto')?.checked;
+
+function autoStatus(texto) {
+  const el = $('#sp-auto-status');
+  if (!el) return;
+  el.hidden = !texto;
+  el.textContent = texto || '';
+}
+
+function agendarAuto(ms, motivo) {
+  clearTimeout(autoTimer);
+  if (!autoLigado()) return;
+  const quando = Date.now() + ms;
+  autoStatus(`${motivo} · próxima tentativa às ${hhmm(quando)}`);
+  autoTimer = setTimeout(cicloAuto, ms);
+}
+
+async function cicloAuto() {
+  if (!autoLigado() || autoRodando) return;
+  if (!state.spUser || !state.albums.length) return autoStatus('');
+
+  // Nada pendente: não há o que sondar, e sondar à toa gasta cota.
+  const c = countStatuses('spotify');
+  if (!c.pending && !c.partial && !c.none) {
+    autoStatus('Coleção completa — nada pendente.');
+    return;
+  }
+
+  // Bloqueio de ritmo tem hora marcada: espera ela passar sem gastar chamada.
+  const resta = esperaRestante();
+  if (resta) return agendarAuto(resta + 5000, 'Em espera por ritmo');
+
+  autoRodando = true;
+  try {
+    autoStatus('Testando se a busca respondeu…');
+    await sp.ping(); // uma chamada: é o preço de descobrir
+    // Enquanto houver disco que nunca passou por esta versão do matcher, a
+    // passada barata cobre mais coleção pelo mesmo saldo. Depois dela, a
+    // completa volta para resgatar os parciais.
+    const esforco = state.albums.some((a) => state.cache.spotify[a.key]?.mv !== MATCHER_VERSION) ? 'barato' : 'completo';
+    autoStatus(`A busca voltou — analisando um lote (passada ${esforco}).`);
+    const { stopped, analyzed } = await runSync('spotify', { esforco });
+    if (stopped) agendarAuto(SONDA_BLOQUEADO_MS, 'Bloqueado de novo');
+    else if (analyzed) agendarAuto(SONDA_ENTRE_LOTES_MS, `${plural(analyzed, 'disco analisado', 'discos analisados')}`);
+    else agendarAuto(SONDA_BLOQUEADO_MS, 'Sem avanço nesta rodada');
+  } catch (e) {
+    if (e.status === 429) agendarAuto(SONDA_BLOQUEADO_MS, e.quotaExceeded ? 'Cota ainda fechada' : 'Limite de ritmo');
+    else {
+      autoStatus(`Parado: ${friendlyError(e)}`);
+      $('#sp-auto').checked = false;
+      LS.set('vp.spAuto', false);
+    }
+  } finally {
+    autoRodando = false;
+  }
+}
+
+function ligarAuto(on) {
+  LS.set('vp.spAuto', !!on);
+  clearTimeout(autoTimer);
+  if (!on) return autoStatus('');
+  cicloAuto();
+}
+
+async function runSync(platform, { esforco = 'completo' } = {}) {
   log('');
   setPlatform(platform);
   if (platform === 'spotify') {
-    const { results, stopped } = await runMatch('spotify');
+    const { results, stopped, analyzed } = await runMatch('spotify', { esforco });
     // A análise e a escrita usam baldes de cota diferentes: a busca pode estar
     // esgotada e a playlist, viva. Então o que já foi casado em rodadas
     // anteriores vai para a playlist mesmo quando a análise de hoje nem
@@ -514,7 +595,7 @@ async function runSync(platform) {
     const casadas = Object.values(results).reduce((n, r) => n + (r?.tracks || []).filter((t) => t.match).length, 0);
     if (!casadas) {
       showResult('spotify', `Nada para escrever na playlist ainda. ${stopped || ''}`.trim());
-      return;
+      return { stopped, analyzed };
     }
     progress('spotify', 0, 1, 'Atualizando a playlist…');
     const pin = playlistPin();
@@ -543,7 +624,7 @@ async function runSync(platform) {
       ? `“${r.playlistName}” já tem as ${r.total} faixas que conseguimos casar até agora — nada a acrescentar.`
       : `${novas} em “${r.playlistName}” (${r.total} no total).`;
     showResult('spotify', `${msg}${stopped ? ` ${stopped}` : ''}`, r.url);
-    return;
+    return { stopped, analyzed };
   }
   const yt = newYouTube();
   const r = await syncYouTube({
@@ -931,6 +1012,8 @@ $('#sp-gap').onchange = (e) => {
   LS.set('vp.spGap', v);
   log(`Ritmo salvo: ${v} ms. Recarregue a página para valer na próxima análise.`);
 };
+$('#sp-auto').checked = !!LS.get('vp.spAuto', false);
+$('#sp-auto').onchange = (e) => ligarAuto(e.target.checked);
 $('#sp-lote').value = String(LS.get('vp.spLote', '25'));
 $('#sp-lote').onchange = (e) => LS.set('vp.spLote', e.target.value);
 $('#btn-diag').onclick = (e) => busy(e.currentTarget, runDiagnostic);
@@ -986,4 +1069,5 @@ function setupPlatforms() {
   await refreshPlatformStatus();
   const novos = await adotarCachePublicado();
   if (novos) log(`A rotina automática adiantou ${novos} ${novos === 1 ? 'disco' : 'discos'} desde a sua última visita.`);
+  if (autoLigado()) cicloAuto();
 })();

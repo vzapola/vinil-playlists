@@ -113,9 +113,13 @@ A cota é **por endpoint**. Na prática, `/search` pode estar esgotada enquanto 
 
 ### Esvaziar uma coleção grande sem clicar todo dia
 
-A rotina roda sozinha de 6 em 6 horas (`.github/workflows/sync.yml`). Não é para "atualizar diariamente": é para alcançar a janela em que a cota volta, que ninguém sabe quando é. Execução dentro da espera registrada não faz chamada nenhuma; sem espera registrada, custa uma busca para descobrir. O que ela analisa é publicado em `cache/cache.json`, e a página adota esse resultado ao abrir — então o avanço aparece sem você fazer nada.
+**Na página, marque "Continuar sozinho enquanto esta aba estiver aberta".** É o caminho mais simples e não precisa de token, secret nem nada no GitHub: usa a conexão que já está no navegador. Com a aba aberta, a página sonda a busca de meia em meia hora ao preço de uma chamada; quando a cota responde, ela emenda lotes até fechar a coleção ou levar bloqueio de novo, escrevendo na playlist a cada rodada. O estado aparece embaixo da caixa: *"Cota ainda fechada · próxima tentativa às 12:52"*.
 
-Para isso funcionar são necessários os secrets da seção *Passo a passo*. Sem eles a rotina pula o Spotify e não faz nada.
+A primeira varredura usa a passada barata sozinha; quando todo disco já tiver passado, ela muda para a completa para resgatar os parciais.
+
+**Como alternativa**, a rotina do GitHub Actions roda sozinha de 6 em 6 horas (`.github/workflows/sync.yml`). Não é para "atualizar diariamente": é para alcançar a janela em que a cota volta, que ninguém sabe quando é. Execução dentro da espera registrada não faz chamada nenhuma; sem espera registrada, custa uma busca para descobrir. O que ela analisa é publicado em `cache/cache.json`, e a página adota esse resultado ao abrir — então o avanço aparece sem você fazer nada.
+
+Ela exige os secrets da seção *Passo a passo* — sem eles, pula o Spotify e não faz nada. A vantagem sobre a aba aberta é só uma, mas é real: fora do navegador o `Retry-After` chega, então ela sabe a hora exata de voltar em vez de sondar no escuro.
 
 ## Limites que vale conhecer
 
