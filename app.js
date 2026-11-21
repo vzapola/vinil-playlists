@@ -767,31 +767,47 @@ async function runDiagnostic() {
   say(`versão ${CONFIG.version} · ${new Date().toLocaleTimeString('pt-BR')}`);
   say('');
 
-  const me = await probe('/me');
-  say(`GET /me      -> ${me.status} em ${me.ms} ms`);
-  if (me.status !== 200) say(`   corpo: ${me.body}`);
+  // A cota do Development Mode não é um número só: a documentação diz que os
+  // endpoints vão para baldes e cada balde tem seu limite. Então a pergunta
+  // útil não é "estou bloqueado?", é "o que ainda responde?". Se a busca
+  // estiver morta mas álbum e playlist vivos, existe caminho sem busca.
+  const pl = LS.get('vp.playlist', {})?.spotify?.id;
+  const baldes = [
+    ['perfil   ', '/me'],
+    ['busca    ', '/search?q=caetano&type=album&limit=1'],
+    ['álbum    ', '/albums/4aawyAB9vmqN3uQ7FjRGTy/tracks?limit=1'],
+    ['playlists', '/me/playlists?limit=1'],
+  ];
+  if (pl) baldes.push(['faixas pl', `/playlists/${pl}/items?limit=1`]);
 
-  const s = await probe('/search?q=caetano&type=album&limit=1');
-  say(`GET /search  -> ${s.status} em ${s.ms} ms`);
-  if (s.retryAfter) say(`   Retry-After: ${s.retryAfter}`);
-  if (s.status !== 200) {
-    say(`   corpo: ${s.body}`);
-    say('');
-    if (s.status === 429) {
-      const cota = /QUOTA_EXCEEDED/i.test(s.body);
-      say(me.status === 200 ? 'Perfil passa, busca é recusada: o limite é da busca, não da conta.' : 'Tudo recusado: o app está bloqueado agora.');
-      say(
-        cota
-          ? 'reason=QUOTA_EXCEEDED: é saldo de app em Development Mode, não ritmo. Esperar minutos não devolve nada e cada chamada a mais só gasta. Reduza o lote e volte depois.'
-          : 'Sem QUOTA_EXCEEDED no corpo: é limite de ritmo, cuja janela é de 30 segundos corridos. Alguns minutos parados resolvem.',
-      );
+  const vivos = [];
+  let busca = null;
+  for (const [nome, path] of baldes) {
+    const r = await probe(path);
+    const marca = r.status === 200 ? 'ok' : r.status === 429 ? (/QUOTA_EXCEEDED/i.test(r.body) ? 'COTA' : 'RITMO') : String(r.status);
+    say(`${nome} -> ${String(r.status).padEnd(4)} ${marca.padEnd(5)} ${r.ms} ms`);
+    if (r.status !== 200) say(`            ${r.body.slice(0, 160)}`);
+    if (r.status === 200) vivos.push(nome.trim());
+    if (nome.startsWith('busca')) busca = r;
+    await new Promise((r2) => setTimeout(r2, 400));
+  }
+
+  say('');
+  if (busca?.status === 429) {
+    const cota = /QUOTA_EXCEEDED/i.test(busca.body);
+    say(cota ? 'A busca está sem cota (QUOTA_EXCEEDED).' : 'A busca levou limite de ritmo (janela de 30 s).');
+    say(vivos.length ? `Ainda respondem: ${vivos.join(', ')}.` : 'Nada respondeu: o app está bloqueado por inteiro.');
+    if (cota && vivos.some((v) => v === 'álbum')) {
+      say('');
+      say('Álbum responde e busca não: dá para montar a playlist sem usar /search,');
+      say('resolvendo o id do disco fora do Spotify. Me mande estas linhas.');
     }
     return;
   }
+  if (busca?.status !== 200) return;
 
-  // Quanto aguenta, de verdade: buscas sequenciais espaçadas, até o primeiro
-  // 429. Query única em cada uma para não colher resposta de cache.
-  say('');
+  // Busca viva: mede em que ritmo ela aguenta. Query única em cada chamada
+  // para não colher resposta de cache.
   for (const gap of [350, 1000]) {
     let ok = 0;
     let parou = null;
@@ -809,7 +825,7 @@ async function runDiagnostic() {
     if (parou) break;
   }
   say('');
-  say('8/8 nas duas linhas = ritmo saudável, e o problema era cota acumulada.');
+  say('8/8 nas duas linhas = ritmo saudável; o que trava é saldo, não pressa.');
 }
 
 /* ---------- eventos ---------- */
