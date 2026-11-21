@@ -480,9 +480,36 @@ await test('Spotify: modo barato gasta uma busca por disco', async () => {
   };
   const album = { key: 'k', title: 'Um Disco', artists: ['Um Artista'] };
   const tl = Array.from({ length: 6 }, (_, i) => ({ position: 'A' + i, title: 'F' + i, artists: ['Um Artista'] }));
-  const r = await matchAlbumSpotify(album, tl, sp, { barato: true });
+  const r = await matchAlbumSpotify(album, tl, sp, { esforco: 'barato' });
   assert.equal(buscas, 1, `o modo barato não pode gastar ${buscas} buscas`);
   assert.equal(r.esforco, 'barato', 'o resultado precisa dizer com que esforço foi feito');
+});
+
+// O teto de 8 resgates da passada completa é o que deixou discos de 13
+// faixas parados em 8/13. A passada a fundo existe para terminar o serviço.
+await test('Spotify: a fundo não para no teto de faixas da passada completa', async () => {
+  const tl = Array.from({ length: 13 }, (_, i) => ({ position: 'A' + i, title: 'Faixa ' + i, artists: ['Alceu Valença'] }));
+  const album = { key: 'k', title: 'Alceu Valença', artists: ['Alceu Valença'] };
+  // O álbum não existe no Spotify, mas cada faixa existe solta em coletâneas.
+  const sp = (conta) => ({
+    searchAlbums: async () => (conta.buscas++, []),
+    searchTracks: async (q) => {
+      conta.buscas++;
+      const n = /Faixa (\d+)/.exec(q)?.[1];
+      return n == null ? [] : [{ id: 't' + n, uri: 'spotify:track:' + n, name: 'Faixa ' + n, artists: [{ name: 'Alceu Valença' }], album: { id: 'c1', name: 'Coletânea' }, external_urls: {} }];
+    },
+    albumTracks: async () => [],
+  });
+
+  const c1 = { buscas: 0 };
+  const completo = await matchAlbumSpotify(album, tl, sp(c1), { esforco: 'completo' });
+  assert.equal(completo.found, 8, 'a passada completa para no teto, de propósito');
+
+  const c2 = { buscas: 0 };
+  const fundo = await matchAlbumSpotify(album, tl, sp(c2), { esforco: 'fundo' });
+  assert.equal(fundo.found, 13, 'a fundo termina o disco');
+  assert.equal(fundo.esforco, 'fundo');
+  assert.ok(c2.buscas > c1.buscas, 'e custa mais, que é o motivo de não ser o padrão');
 });
 
 // Senão a passada barata congelaria os parciais: eles ficariam "frescos" por

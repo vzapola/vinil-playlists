@@ -15,17 +15,21 @@ export function initCache(data) {
   return c;
 }
 
+// Ordem dos esforços. Resultado guardado por um esforço menor que o desta
+// rodada conta como velho, desde que não esteja completo: é isso que faz a
+// passada a fundo alcançar os parciais que o teto da passada completa deixou
+// pela metade. Entrada antiga, sem carimbo, vale como 'completo'.
+const NIVEL = { barato: 1, completo: 2, fundo: 3 };
+
 export function isFresh(entry, platform, esforco = 'completo') {
   if (!entry) return false;
-  // Resultado de uma passada barata (uma busca por disco) que não fechou o
-  // álbum merece outra chance quando houver cota para a passada completa.
-  // Um 'full' barato já está certo e não se refaz.
-  if (esforco === 'completo' && entry.esforco === 'barato' && entry.status !== 'full') return false;
   // Resultado de uma versão anterior do matcher conta como velho: é isso que
   // faz as melhorias alcançarem o que já está salvo, aos poucos, a cada
   // execução, em vez de exigir um "refazer tudo" que a cota não deixa terminar.
   if (entry.mv !== MATCHER_VERSION) return false;
+  // Disco inteiro já está certo, não importa quanto custou achá-lo.
   if (entry.status === 'full') return true;
+  if ((NIVEL[esforco] || 2) > (NIVEL[entry.esforco] || 2)) return false;
   return Date.now() - (entry.checkedAt || 0) < TTL_DAYS[platform] * DAY;
 }
 

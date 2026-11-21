@@ -349,8 +349,18 @@ function renderPlaylistHint() {
 }
 
 /* ---------- matching e sincronização ---------- */
+// Qual passada esta rodada deve fazer. Sobe sozinha: varre a coleção barato,
+// depois gasta mais nos que não fecharam, e por fim vai a fundo nos que
+// sobraram. Assim ninguém precisa escolher nível de esforço no dedo.
+function esforcoAtual() {
+  const r = (a) => state.cache.spotify[a.key];
+  if (state.albums.some((a) => r(a)?.mv !== MATCHER_VERSION)) return 'barato';
+  if (state.albums.some((a) => r(a)?.status !== 'full' && (r(a)?.esforco || 'completo') === 'barato')) return 'completo';
+  return 'fundo';
+}
+
 function matchFnFor(platform, yt, esforco = 'completo') {
-  if (platform === 'spotify') return (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, barato: esforco === 'barato' });
+  if (platform === 'spotify') return (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, esforco });
   const trackSearch = $('#yt-tracksearch').checked;
   return (a, t) => matchAlbumYouTube(a, t, yt, { trackSearch });
 }
@@ -408,7 +418,7 @@ function takeForce() {
 // esforco 'barato' gasta uma busca por disco em vez de até quatro. É o que o
 // modo automático usa na primeira varredura: com a cota fechando sem aviso,
 // alcançar 149 discos vale mais que esgotar cada um deles.
-async function runMatch(platform, { esforco = 'completo' } = {}) {
+async function runMatch(platform, { esforco = esforcoAtual() } = {}) {
   log('');
   setPlatform(platform);
 
@@ -558,10 +568,7 @@ async function cicloAuto() {
   try {
     autoStatus('Testando se a busca respondeu…');
     await sp.ping(); // uma chamada: é o preço de descobrir
-    // Enquanto houver disco que nunca passou por esta versão do matcher, a
-    // passada barata cobre mais coleção pelo mesmo saldo. Depois dela, a
-    // completa volta para resgatar os parciais.
-    const esforco = state.albums.some((a) => state.cache.spotify[a.key]?.mv !== MATCHER_VERSION) ? 'barato' : 'completo';
+    const esforco = esforcoAtual();
     autoStatus(`A busca voltou — analisando um lote (passada ${esforco}).`);
     const { stopped, analyzed } = await runSync('spotify', { esforco });
     if (stopped) agendarAuto(SONDA_BLOQUEADO_MS, 'Bloqueado de novo');
@@ -586,7 +593,7 @@ function ligarAuto(on) {
   cicloAuto();
 }
 
-async function runSync(platform, { esforco = 'completo' } = {}) {
+async function runSync(platform, { esforco = esforcoAtual() } = {}) {
   log('');
   setPlatform(platform);
   if (platform === 'spotify') {

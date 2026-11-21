@@ -70,11 +70,25 @@ function summarize(platform, album, matchedAlbum, tracks, extra = {}) {
 
 /* ---------------- Spotify ---------------- */
 
-// barato: uma busca por disco e nenhuma varredura faixa a faixa. Serve para
-// a primeira passada sobre uma coleção inteira quando a cota é curta — cobre
-// a maioria dos discos pelo preço de um, e o que sobrar fica para uma passada
-// completa depois. 149 discos custam 149 chamadas em vez de 555.
-export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode, barato = false } = {}) {
+// Três níveis de esforço, do mais barato ao mais caro:
+//
+//   barato   uma busca por disco, nenhuma varredura faixa a faixa. Para a
+//            primeira passada sobre uma coleção inteira: 149 discos custam
+//            149 chamadas em vez de 555.
+//   completo até três buscas de álbum e no máximo 8 faixas resgatadas uma a
+//            uma. O teto existe para um LP de 20 faixas não comer sozinho a
+//            cota de todos os outros.
+//   fundo    sem teto e sem desistir: é o que termina o serviço nos discos
+//            que ficaram parciais justamente por causa do teto.
+const NIVEIS = {
+  barato: { albumQueries: 1, maxLookups: 0, giveUpAfter: 0 },
+  completo: { albumQueries: 3, maxLookups: 8, giveUpAfter: 2 },
+  fundo: { albumQueries: 3, maxLookups: Infinity, giveUpAfter: Infinity },
+};
+
+export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode, esforco = 'completo' } = {}) {
+  const nivel = NIVEIS[esforco] || NIVEIS.completo;
+  const barato = nivel.albumQueries === 1;
   const various = album.artists.some(isVarious);
   const primary = primaryArtist(album);
   const solta = various ? q(album.title) : `${q(album.title)} ${q(primary)}`;
@@ -140,7 +154,7 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode, bar
       title: t.name,
       match: spTrack(t, matchedAlbum.name, 'album'),
     }));
-    return summarize('spotify', album, matchedAlbum, tracks, { note: 'Sem tracklist no Discogs; usado o álbum do Spotify', esforco: barato ? 'barato' : 'completo' });
+    return summarize('spotify', album, matchedAlbum, tracks, { note: 'Sem tracklist no Discogs; usado o álbum do Spotify', esforco });
   }
 
   const tracks = discogsTracks.map((dt, i) => ({
@@ -156,8 +170,8 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode, bar
   // Quando nem o álbum foi encontrado, varrer faixa a faixa custa caro e a
   // cota do Spotify é curta. Se algumas faixas seguidas não aparecem, o disco
   // provavelmente não está na plataforma: desiste e segue para o próximo.
-  const GIVE_UP_AFTER = 2;
-  const MAX_LOOKUPS = barato ? 0 : 8;
+  const GIVE_UP_AFTER = nivel.giveUpAfter;
+  const MAX_LOOKUPS = nivel.maxLookups;
   const usedIds = new Set(tracks.map((t) => t.match?.id).filter(Boolean));
   let misses = 0;
   let lookups = 0;
@@ -179,7 +193,7 @@ export async function matchAlbumSpotify(album, discogsTracks, sp, { barcode, bar
     } else misses++;
   }
 
-  return summarize('spotify', album, matchedAlbum, tracks, { esforco: barato ? 'barato' : 'completo' });
+  return summarize('spotify', album, matchedAlbum, tracks, { esforco });
 }
 
 async function findTrackElsewhere(sp, title, artist, albumTitle, excludeAlbumId, usedIds = new Set()) {

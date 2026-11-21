@@ -96,16 +96,20 @@ async function main() {
       // 149 discos por 149 chamadas em vez de 555. Quando todos já tiverem
       // passado, as execuções seguintes gastam mais por disco para resgatar
       // os parciais.
-      const primeiraPassada = albums.some((a) => cache.spotify[a.key]?.mv !== MATCHER_VERSION);
-      const esforco = primeiraPassada ? 'barato' : 'completo';
-      out(`Passada **${esforco}**${esforco === 'barato' ? ', uma busca por disco.' : ', resgatando os parciais.'}\n`);
+      const r0 = (a) => cache.spotify[a.key];
+      const esforco = albums.some((a) => r0(a)?.mv !== MATCHER_VERSION)
+        ? 'barato'
+        : albums.some((a) => r0(a)?.status !== 'full' && (r0(a)?.esforco || 'completo') === 'barato')
+          ? 'completo'
+          : 'fundo';
+      out(`Passada **${esforco}**${esforco === 'barato' ? ', uma busca por disco.' : esforco === 'fundo' ? ', sem teto de faixas.' : ', resgatando os parciais.'}\n`);
 
       const r = await matchAll({
         platform: 'spotify',
         albums,
         cache,
         esforco,
-        matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, barato: esforco === 'barato' }),
+        matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, esforco }),
         onSave: save,
       });
       results = r.results;
