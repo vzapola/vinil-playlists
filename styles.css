@@ -80,6 +80,9 @@ input:focus { outline: 2px solid var(--label); outline-offset: -1px; }
 .field label { color: var(--muted); font-size: 13px; font-weight: 500; }
 .field small { color: var(--muted); font-size: 12px; min-height: 1em; }
 .build { display: block; margin-top: 8px; font: 500 11px 'IBM Plex Mono', monospace; opacity: 0.55; }
+.gap-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.gap-row input { width: 90px; flex: 0 0 auto; padding: 7px 9px; font-size: 14px; }
+.diag { margin: 10px 0 0; padding: 10px; background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; font: 500 11.5px 'IBM Plex Mono', monospace; color: var(--ink); white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
 
 .progress { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
 .bar, .qbar { height: 6px; background: var(--bg2); border-radius: 3px; overflow: hidden; }

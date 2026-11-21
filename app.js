@@ -149,8 +149,13 @@ async function spGetToken() {
   return t.access_token;
 }
 
+// O ritmo fica ajustável na página: assim dá para achar o que o Spotify
+// aceita sem precisar de um deploy a cada tentativa.
+const SP_GAP = Number(LS.get('vp.spGap', 0)) || 350;
+
 const sp = createSpotify({
   getToken: spGetToken,
+  minGap: SP_GAP,
   onThrottle: (gap) => log(`Ritmo reduzido para ${gap} ms entre chamadas — a análise continua, só mais devagar.`),
   onWait: ({ delay, attempt, retries, status }) => {
     if (status !== 429) return;
@@ -628,6 +633,79 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+/* ---------- diagnóstico ---------- */
+// Chamada avulsa: sem freio, sem retentativa, só para ler o código cru.
+// O navegador não enxerga o cabeçalho Retry-After (o Spotify não o expõe por
+// CORS), então o que dá para medir daqui é status, corpo e tempo.
+async function probe(path) {
+  const token = await spGetToken();
+  const t0 = performance.now();
+  let r;
+  try {
+    r = await fetch('https://api.spotify.com/v1' + path, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (e) {
+    return { status: 0, ms: Math.round(performance.now() - t0), body: String(e.message || e) };
+  }
+  const ms = Math.round(performance.now() - t0);
+  let body = '';
+  try {
+    body = (await r.text()).slice(0, 300);
+  } catch {}
+  return { status: r.status, ms, retryAfter: r.headers.get('Retry-After'), body };
+}
+
+async function runDiagnostic() {
+  const el = $('#diag-out');
+  el.hidden = false;
+  const linhas = [];
+  const say = (s) => {
+    linhas.push(s);
+    el.textContent = linhas.join('\n');
+  };
+
+  say(`versão ${CONFIG.version} · ${new Date().toLocaleTimeString('pt-BR')}`);
+  say('');
+
+  const me = await probe('/me');
+  say(`GET /me      -> ${me.status} em ${me.ms} ms`);
+  if (me.status !== 200) say(`   corpo: ${me.body}`);
+
+  const s = await probe('/search?q=caetano&type=album&limit=1');
+  say(`GET /search  -> ${s.status} em ${s.ms} ms`);
+  if (s.retryAfter) say(`   Retry-After: ${s.retryAfter}`);
+  if (s.status !== 200) {
+    say(`   corpo: ${s.body}`);
+    say('');
+    if (s.status === 429) {
+      say(me.status === 200 ? 'Perfil passa, busca é recusada: o limite é da busca, não da conta.' : 'Tudo recusado: o app está bloqueado agora.');
+      say('Enquanto durar, não há ajuste de código que resolva. Rode de novo mais tarde: quando /search voltar a dar 200, a análise funciona.');
+    }
+    return;
+  }
+
+  // Quanto aguenta, de verdade: buscas sequenciais espaçadas, até o primeiro
+  // 429. Query única em cada uma para não colher resposta de cache.
+  say('');
+  for (const gap of [350, 1000]) {
+    let ok = 0;
+    let parou = null;
+    const t0 = performance.now();
+    for (let i = 0; i < 8; i++) {
+      if (i) await new Promise((r) => setTimeout(r, gap));
+      const p = await probe(`/search?q=teste${Date.now()}x${i}&type=album&limit=1`);
+      if (p.status === 200) ok++;
+      else {
+        parou = p.status;
+        break;
+      }
+    }
+    say(`${gap} ms entre chamadas -> ${ok}/8 ok em ${((performance.now() - t0) / 1000).toFixed(1)}s${parou ? ` (parou em ${parou})` : ''}`);
+    if (parou) break;
+  }
+  say('');
+  say('8/8 nas duas linhas = ritmo saudável, e o problema era cota acumulada.');
+}
+
 /* ---------- eventos ---------- */
 $('#username').value = state.username;
 $('#discogs-token').value = LS.get('vp.discogsToken', '');
@@ -645,6 +723,14 @@ $('#form-discogs').onsubmit = (e) => {
   e.preventDefault();
   busy($('#btn-load'), loadCollection);
 };
+$('#sp-gap').value = SP_GAP;
+$('#sp-gap').onchange = (e) => {
+  const v = Math.min(5000, Math.max(100, Number(e.target.value) || 350));
+  e.target.value = v;
+  LS.set('vp.spGap', v);
+  log(`Ritmo salvo: ${v} ms. Recarregue a página para valer na próxima análise.`);
+};
+$('#btn-diag').onclick = (e) => busy(e.currentTarget, runDiagnostic);
 $('#btn-sp-connect').onclick = () => spLogin();
 $('#btn-yt-connect').onclick = () => ytLogin();
 $('#btn-sp-match').onclick = (e) => busy(e.currentTarget, () => runMatch('spotify'));

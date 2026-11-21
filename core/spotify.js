@@ -25,7 +25,10 @@ export function createSpotify({ getToken, minGap = MIN_GAP_MS, onThrottle, onWai
     const headers = { Authorization: `Bearer ${token}` };
     if (body) headers['Content-Type'] = 'application/json';
     try {
-      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 6, onWait });
+      // Poucas retentativas de propósito: insistir contra um limitador é
+      // bater numa porta que acabou de fechar, e cada insistência conta como
+      // nova violação. Quem decide parar de vez é o matchAll, no primeiro 429.
+      return await fetchJson(u, { method, headers, body: body ? JSON.stringify(body) : undefined }, { label: 'Spotify', retries: 2, onWait });
     } catch (e) {
       if (e.status === 429 && gap < MAX_GAP_MS) {
         gap = Math.min(gap * 2, MAX_GAP_MS);

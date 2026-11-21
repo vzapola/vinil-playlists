@@ -61,6 +61,13 @@
             Fica salvo só neste navegador.
           </small>
         </details>
+        <details class="opts">
+          <summary>Diagnóstico da conexão</summary>
+          <label class="gap-row">Ritmo entre chamadas: <input id="sp-gap" type="number" min="100" max="5000" step="50" /> ms</label>
+          <button class="btn small ghost" id="btn-diag" type="button">Medir agora</button>
+          <small>Faz poucas chamadas avulsas e mostra o código de resposta cru de cada uma, sem retentativas. Serve para saber se o Spotify está bloqueando e em que ritmo ele aceita.</small>
+          <pre class="diag" id="diag-out" hidden></pre>
+        </details>
         <div class="pl-actions">
           <button class="btn" id="btn-sp-match" disabled>Analisar matches</button>
           <button class="btn accent" id="btn-sp-sync" disabled>Atualizar playlist</button>
