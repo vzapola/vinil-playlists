@@ -2,7 +2,7 @@
 export const CONFIG = {
   // Aparece no rodapé da página. Serve para conferir, de bate-pronto, se o
   // navegador está rodando a versão publicada ou uma em cache.
-  version: '2026-11-21 · 17',
+  version: '2026-11-21 · 18',
 
   // Spotify Developer Dashboard > seu app > Client ID
   spotifyClientId: '4325e1af4fcc4035b0e61c4e3d146c67',
@@ -12,7 +12,7 @@ export const CONFIG = {
   // Para ativar: projeto no Google Cloud > YouTube Data API v3 > ID do cliente OAuth.
   googleClientId: '',
 
-  playlistName: 'Minha coleção de vinil',
+  playlistName: 'Coleção de Vinil',
   playlistDescription: 'Todos os discos da minha coleção no Discogs, sincronizados automaticamente.',
 
   // Usuário que já aparece preenchido na página. Deixe vazio para a página ficar

@@ -22,6 +22,12 @@ function refresher(name, url, params, headers = {}) {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(`${name}: falha ao renovar token (${j.error_description || j.error}). Gere um novo refresh token com sync/auth.mjs.`);
+    // Alguns provedores devolvem um refresh token novo e invalidam o antigo.
+    // A rotina não tem como reescrever o próprio secret, então avisa alto: do
+    // contrário ela morreria em silêncio na execução seguinte.
+    if (j.refresh_token && j.refresh_token !== params.refresh_token) {
+      out(`> **Atenção:** o ${name} devolveu um refresh token novo. Atualize o secret ${name === 'Spotify' ? 'SPOTIFY' : 'GOOGLE'}_REFRESH_TOKEN, senão a próxima execução falha.\n`);
+    }
     tok = { value: j.access_token, exp: Date.now() + (j.expires_in - 120) * 1000 };
     return tok.value;
   };
@@ -131,7 +137,9 @@ async function main() {
         sp,
         playlistName: CONFIG.playlistName,
         description: CONFIG.playlistDescription,
-        pinnedId: cache.playlist.spotify?.id,
+        // SPOTIFY_PLAYLIST_ID manda: é o jeito de apontar a rotina para a
+        // playlist que já existe, sem depender de casar pelo nome.
+        pinnedId: env('SPOTIFY_PLAYLIST_ID') || cache.playlist.spotify?.id,
         onPlaylist: (pp) => (cache.playlist.spotify = pp),
       });
       await save();

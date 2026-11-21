@@ -79,10 +79,12 @@ Settings › Secrets and variables › Actions.
 
 **Secrets:** `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN` e, opcional, `DISCOGS_TOKEN` (Discogs › Settings › Developers).
 
-**Variables:** `DISCOGS_USERNAME` (obrigatória) — o usuário cuja coleção a rotina diária acompanha.
+**Variables:** `DISCOGS_USERNAME` (obrigatória) — o usuário cuja coleção a rotina acompanha. E `SPOTIFY_PLAYLIST_ID` (recomendada) — o id da playlist que já existe, que é o trecho final da URL dela (`open.spotify.com/playlist/<id>`). Sem ela a rotina procura pelo nome em `playlistName`, e um nome diferente faz nascer uma segunda playlist.
 
 ### 5. Testar
-Actions › *Sync diário do vinil* › **Run workflow**. O resumo com os grupos aparece na página da execução.
+Actions › *Sync do vinil* › **Run workflow**. O resumo com os grupos aparece na página da execução. Depois disso ela roda sozinha de 6 em 6 horas.
+
+> O refresh token do Spotify vale 180 dias. Se um dia o provedor devolver um token novo, a rotina avisa no resumo da execução — ela não tem como reescrever o próprio secret.
 
 ## Quem consegue conectar o Spotify
 
