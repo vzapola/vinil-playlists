@@ -51,6 +51,39 @@ const saveCache = () => {
   saveTimer = setTimeout(() => LS.set('vp.cache', state.cache), 400);
 };
 
+// A rotina do GitHub Actions analisa os discos no servidor e publica o
+// resultado em cache/cache.json junto com o site. A página adota o que for
+// mais novo que o seu, para você ver o avanço da rotina sem ter de clicar em
+// nada. Só o cache de matches: a playlist fixada é de quem publicou o site e
+// não vale para quem abre a página com a própria coleção.
+async function adotarCachePublicado() {
+  let pub;
+  try {
+    const r = await fetch('cache/cache.json', { cache: 'no-store' });
+    if (!r.ok) return 0;
+    pub = await r.json();
+  } catch {
+    return 0;
+  }
+  let mudou = 0;
+  let matches = 0; // só o que é avanço de análise: tracklist do Discogs não conta
+  for (const area of ['discogs', 'spotify', 'youtube']) {
+    for (const [k, v] of Object.entries(pub?.[area] || {})) {
+      const meu = state.cache[area][k];
+      const adotar = area === 'discogs' ? !meu : !meu || (v?.checkedAt || 0) > (meu?.checkedAt || 0);
+      if (!adotar) continue;
+      state.cache[area][k] = v;
+      mudou++;
+      if (area !== 'discogs') matches++;
+    }
+  }
+  if (mudou) {
+    LS.set('vp.cache', state.cache);
+    render();
+  }
+  return matches;
+}
+
 /* ---------- UI helpers ---------- */
 function log(msg) {
   const el = $('#log');
@@ -951,4 +984,6 @@ function setupPlatforms() {
   renderSummary();
   render();
   await refreshPlatformStatus();
+  const novos = await adotarCachePublicado();
+  if (novos) log(`A rotina automática adiantou ${novos} ${novos === 1 ? 'disco' : 'discos'} desde a sua última visita.`);
 })();

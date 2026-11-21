@@ -5,7 +5,7 @@ import { CONFIG } from '../config.js';
 import { createDiscogs } from '../core/discogs.js';
 import { createSpotify } from '../core/spotify.js';
 import { createYouTube } from '../core/youtube.js';
-import { matchAlbumSpotify, matchAlbumYouTube } from '../core/matcher.js';
+import { matchAlbumSpotify, matchAlbumYouTube, MATCHER_VERSION } from '../core/matcher.js';
 import { initCache, loadTracklists, matchAll, syncSpotify, syncYouTube } from '../core/pipeline.js';
 
 const CACHE_FILE = new URL('../cache/cache.json', import.meta.url);
@@ -73,19 +73,70 @@ async function main() {
     const basic = Buffer.from(`${env('SPOTIFY_CLIENT_ID')}:${env('SPOTIFY_CLIENT_SECRET')}`).toString('base64');
     const getToken = refresher('Spotify', 'https://accounts.spotify.com/api/token', { grant_type: 'refresh_token', refresh_token: env('SPOTIFY_REFRESH_TOKEN') }, { Authorization: `Basic ${basic}` });
     const sp = createSpotify({ getToken, onThrottle: (gap) => console.log(`Spotify pediu calma (429): ritmo reduzido para ${gap} ms entre chamadas.`) });
-    const { results } = await matchAll({ platform: 'spotify', albums, cache, matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, rel) });
-    await save();
-    const s = await syncSpotify({
-      albums,
-      results,
-      sp,
-      playlistName: CONFIG.playlistName,
-      description: CONFIG.playlistDescription,
-      pinnedId: cache.playlist.spotify?.id,
-      onPlaylist: (p) => (cache.playlist.spotify = p),
-    });
-    await save();
-    out(`Spotify: **${s.added}** faixas novas em "${s.playlistName}" (${s.total} no total). [Abrir](${s.url})\n`);
+    const hora = (t) => new Date(t).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+    // A cota de busca é por conta de desenvolvedor e o Spotify não publica
+    // nem o tamanho nem o prazo de reposição. Quando uma execução anterior
+    // guardou um prazo (Retry-After, que só chega fora do navegador), esta
+    // respeita e nem tenta: bater na porta fechada é o que renova o castigo.
+    const espera = cache.spQuota?.until || 0;
+    let results = {};
+
+    if (espera > Date.now()) {
+      out(`Busca em espera até ${hora(espera)}, prazo pedido pelo próprio Spotify. Nenhuma busca nesta execução.\n`);
+      for (const a of albums) if (cache.spotify[a.key]) results[a.key] = cache.spotify[a.key];
+    } else {
+      // A primeira passada de um disco custa uma busca só (modo barato):
+      // 149 discos por 149 chamadas em vez de 555. Quando todos já tiverem
+      // passado, as execuções seguintes gastam mais por disco para resgatar
+      // os parciais.
+      const primeiraPassada = albums.some((a) => cache.spotify[a.key]?.mv !== MATCHER_VERSION);
+      const esforco = primeiraPassada ? 'barato' : 'completo';
+      out(`Passada **${esforco}**${esforco === 'barato' ? ', uma busca por disco.' : ', resgatando os parciais.'}\n`);
+
+      const r = await matchAll({
+        platform: 'spotify',
+        albums,
+        cache,
+        esforco,
+        matchFn: (a, t, rel) => matchAlbumSpotify(a, t, sp, { ...rel, barato: esforco === 'barato' }),
+        onSave: save,
+      });
+      results = r.results;
+
+      if (r.quota) {
+        // O único número real sobre quando a cota volta. Se o cabeçalho vier,
+        // vira o prazo da próxima execução; se não vier, a próxima execução
+        // agendada descobre sozinha, ao custo de uma chamada.
+        const at = Date.now();
+        cache.spQuota = { at, retryAfter: r.retryAfter || null, until: r.retryAfter ? at + r.retryAfter * 1000 : null };
+        const prazo = r.retryAfter ? `${r.retryAfter}s, volta ${hora(cache.spQuota.until)}` : 'não veio no cabeçalho';
+        out(`> Cota de busca esgotada depois de ${r.analyzed} discos. Retry-After: ${prazo}.\n`);
+      } else if (r.rateLimited) {
+        out(`> Limite de ritmo depois de ${r.analyzed} discos. Continua na próxima execução.\n`);
+      } else {
+        cache.spQuota = { at: null, retryAfter: null, until: null, lastOkAt: Date.now() };
+        out(`Análise concluída: ${r.analyzed} discos analisados nesta execução.\n`);
+      }
+      await save();
+    }
+
+    // A playlist não depende da busca: são baldes de cota diferentes. Escreve
+    // o que já está casado mesmo quando a análise não andou nada hoje.
+    const temMatch = Object.values(results).some((x) => x?.tracks?.some((t) => t.match));
+    if (temMatch) {
+      const s2 = await syncSpotify({
+        albums,
+        results,
+        sp,
+        playlistName: CONFIG.playlistName,
+        description: CONFIG.playlistDescription,
+        pinnedId: cache.playlist.spotify?.id,
+        onPlaylist: (pp) => (cache.playlist.spotify = pp),
+      });
+      await save();
+      out(`Spotify: **${s2.added}** ${s2.added === 1 ? 'faixa nova' : 'faixas novas'} em "${s2.playlistName}" (${s2.total} no total). [Abrir](${s2.url})\n`);
+    } else out('Spotify: nada casado ainda para escrever na playlist.\n');
     report('Spotify', albums, results);
   } else out('Spotify: pulado (SPOTIFY_REFRESH_TOKEN não definido).\n');
 

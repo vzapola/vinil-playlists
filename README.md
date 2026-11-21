@@ -27,7 +27,7 @@ Um disco que não existe na plataforma não quebra nada: ele entra em "sem match
 
 ## No dia a dia
 
-Cadastrou um disco novo no Discogs? Abra a página, **Buscar**, **Atualizar playlist**. Só as faixas novas são acrescentadas — repetir o clique não duplica nada. Disco já casado 100% fica em cache e não é procurado de novo, então atualizar é questão de segundos depois da primeira carga.
+Cadastrou um disco novo no Discogs? Abra a página, **Buscar**, **Atualizar playlist**. Um disco ou dois cabem em qualquer cota. Só as faixas novas são acrescentadas — repetir o clique não duplica nada. Disco já casado 100% fica em cache e não é procurado de novo, então atualizar é questão de segundos depois da primeira carga.
 
 ### Nome da playlist
 
@@ -91,6 +91,29 @@ O Spotify limita apps em Development Mode a **5 contas autorizadas**, que o dono
 Por isso a página aceita que cada pessoa use o **próprio app do Spotify**: em *Usar meu próprio app do Spotify*, ela cola o Client ID dela e conecta a conta dela. É um cadastro de dois minutos no dashboard do Spotify, e o Client ID fica salvo só no navegador dela.
 
 Ler a coleção do Discogs não tem nenhum limite desses: funciona para qualquer usuário, sem login.
+
+## A cota de busca do Spotify
+
+Este é o limite que manda no projeto, e vale entender antes de concluir que algo está quebrado.
+
+Apps em **Development Mode** têm uma cota de requisições que, [desde 23/07/2026](https://developer.spotify.com/blog/2026-07-23-web-api-quota-updates), é contada **por conta de desenvolvedor, não por app**: criar um segundo Client ID não dá cota nova, porque todos dividem o mesmo saldo. O tamanho da cota, o agrupamento por endpoint e o prazo de reposição **não são publicados**.
+
+Quando ela acaba, a resposta é `429` com `reason: "QUOTA_EXCEEDED"` no corpo — diferente do `429` de ritmo, que é uma janela de 30 segundos corridos. São coisas distintas: contra a cota, esperar minutos não adianta e cada nova tentativa só gasta mais.
+
+A cota é **por endpoint**. Na prática, `/search` pode estar esgotada enquanto `/albums/{id}/tracks` e os endpoints de playlist respondem normalmente — e é por isso que a playlist continua sendo atualizada mesmo nos dias em que nenhuma análise anda. O botão **Medir agora**, em *Diagnóstico da conexão*, sonda cada um e guarda o histórico das sondagens.
+
+**Como o projeto convive com isso:**
+
+- **Uma busca por disco na primeira passada.** A varredura de 149 discos custa 149 chamadas em modo barato, contra 555 no modo completo e 1231 antes de medirmos. Os parciais ficam para uma passada completa posterior.
+- **Para no primeiro `QUOTA_EXCEEDED`**, sem retentativa e sem reduzir o ritmo: nada disso devolve saldo.
+- **A rotina do Actions respeita o `Retry-After`.** Esse cabeçalho não atravessa o CORS, então o navegador nunca o vê — mas a rotina roda fora do navegador e enxerga. Ela guarda o prazo em `cache.spQuota` e as execuções seguintes nem tentam até lá.
+- **Escreve a playlist de qualquer jeito**, com o que já está casado, porque isso não depende da busca.
+
+### Esvaziar uma coleção grande sem clicar todo dia
+
+A rotina roda sozinha de 6 em 6 horas (`.github/workflows/sync.yml`). Não é para "atualizar diariamente": é para alcançar a janela em que a cota volta, que ninguém sabe quando é. Execução dentro da espera registrada não faz chamada nenhuma; sem espera registrada, custa uma busca para descobrir. O que ela analisa é publicado em `cache/cache.json`, e a página adota esse resultado ao abrir — então o avanço aparece sem você fazer nada.
+
+Para isso funcionar são necessários os secrets da seção *Passo a passo*. Sem eles a rotina pula o Spotify e não faz nada.
 
 ## Limites que vale conhecer
 

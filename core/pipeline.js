@@ -15,8 +15,12 @@ export function initCache(data) {
   return c;
 }
 
-export function isFresh(entry, platform) {
+export function isFresh(entry, platform, esforco = 'completo') {
   if (!entry) return false;
+  // Resultado de uma passada barata (uma busca por disco) que não fechou o
+  // álbum merece outra chance quando houver cota para a passada completa.
+  // Um 'full' barato já está certo e não se refaz.
+  if (esforco === 'completo' && entry.esforco === 'barato' && entry.status !== 'full') return false;
   // Resultado de uma versão anterior do matcher conta como velho: é isso que
   // faz as melhorias alcançarem o que já está salvo, aos poucos, a cada
   // execução, em vez de exigir um "refazer tudo" que a cota não deixa terminar.
@@ -41,17 +45,21 @@ export async function loadTracklists({ albums, discogs, cache, onProgress, onSav
 // A cota do Spotify em Development Mode é curta e opaca, então varrer a
 // coleção inteira de uma vez é o jeito mais rápido de não terminar nenhuma
 // vez. Com lote, cada clique avança um pedaço e o progresso fica salvo.
-export async function matchAll({ platform, albums, cache, matchFn, force = false, limit = 0, onResult, onProgress, onSave }) {
+export async function matchAll({ platform, albums, cache, matchFn, force = false, limit = 0, esforco = 'completo', onResult, onProgress, onSave }) {
   const results = {};
   let stopped = null;
   let analyzed = 0; // só os que passaram pelo matcher, sem contar os reaproveitados
   let adiados = 0; // ficaram para a próxima rodada por causa do lote
   let rateLimited = false;
   let quota = false;
+  // Segundos que o Spotify pediu de espera. No navegador nunca chega (o
+  // cabeçalho não atravessa o CORS); no servidor, chega — e é o único número
+  // real que existe sobre quando a cota volta.
+  let retryAfter = 0;
   for (let i = 0; i < albums.length; i++) {
     const a = albums[i];
     const cached = cache[platform][a.key];
-    if (!force && isFresh(cached, platform)) {
+    if (!force && isFresh(cached, platform, esforco)) {
       results[a.key] = cached;
     } else if (limit && analyzed >= limit) {
       // Fora do lote: mostra o que já havia salvo, sem gastar chamada.
@@ -74,6 +82,7 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
           // Dois 429 diferentes. O de cota ("QUOTA_EXCEEDED") é saldo de app
           // em Development Mode: não é pressa, e esperar minutos não devolve
           // nada. O outro é ritmo, e aí esperar resolve.
+          retryAfter = e.retryAfter || 0;
           if (e.quotaExceeded) {
             quota = true;
             stopped = `A cota de buscas do app do Spotify acabou (429 QUOTA_EXCEEDED). ${feitos}`;
@@ -105,7 +114,7 @@ export async function matchAll({ platform, albums, cache, matchFn, force = false
       reaproveitados++;
     }
   }
-  return { results, stopped, analyzed, adiados, reaproveitados, rateLimited, quota, done: Object.keys(results).length };
+  return { results, stopped, analyzed, adiados, reaproveitados, rateLimited, quota, retryAfter, done: Object.keys(results).length };
 }
 
 function waitLabel(seconds) {

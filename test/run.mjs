@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { titleSim, artistSim, norm } from '../core/normalize.js';
 import { matchAlbumSpotify, matchAlbumYouTube, MATCHER_VERSION } from '../core/matcher.js';
 import { toAlbum, parseTracklist } from '../core/discogs.js';
-import { initCache, matchAll, syncSpotify, syncYouTube, wantedIds } from '../core/pipeline.js';
+import { initCache, matchAll, syncSpotify, syncYouTube, wantedIds, isFresh } from '../core/pipeline.js';
 import { createYouTube, QuotaExhausted } from '../core/youtube.js';
 import { createSpotify } from '../core/spotify.js';
 import { HttpError } from '../core/http.js';
@@ -466,6 +466,53 @@ await test('Pipeline: 429 na análise não apaga o que já estava casado', async
   assert.equal(reaproveitados, 2, 'os dois que tinham cache entram; o que nunca foi analisado não inventa resultado');
   const uris = wantedIds(albums, results, 'uri');
   assert.deepEqual(uris, ['spotify:track:k2', 'spotify:track:k3'], 'o que já estava casado tem de chegar à playlist');
+});
+
+// Com a cota de busca por conta de desenvolvedor, curta e sem prazo
+// publicado, a primeira varredura da coleção precisa caber no orçamento:
+// uma busca por disco em vez de até quatro.
+await test('Spotify: modo barato gasta uma busca por disco', async () => {
+  let buscas = 0;
+  const sp = {
+    searchAlbums: async () => (buscas++, []),
+    searchTracks: async () => (buscas++, []),
+    albumTracks: async () => [],
+  };
+  const album = { key: 'k', title: 'Um Disco', artists: ['Um Artista'] };
+  const tl = Array.from({ length: 6 }, (_, i) => ({ position: 'A' + i, title: 'F' + i, artists: ['Um Artista'] }));
+  const r = await matchAlbumSpotify(album, tl, sp, { barato: true });
+  assert.equal(buscas, 1, `o modo barato não pode gastar ${buscas} buscas`);
+  assert.equal(r.esforco, 'barato', 'o resultado precisa dizer com que esforço foi feito');
+});
+
+// Senão a passada barata congelaria os parciais: eles ficariam "frescos" por
+// uma semana e a passada completa nunca os alcançaria.
+await test('Pipeline: parcial barato é refeito na passada completa, full não', () => {
+  const base = { mv: MATCHER_VERSION, checkedAt: Date.now() };
+  const parcialBarato = { ...base, status: 'partial', esforco: 'barato' };
+  const fullBarato = { ...base, status: 'full', esforco: 'barato' };
+  const parcialCompleto = { ...base, status: 'partial', esforco: 'completo' };
+
+  assert.equal(isFresh(parcialBarato, 'spotify', 'barato'), true, 'na própria passada barata, não se refaz');
+  assert.equal(isFresh(parcialBarato, 'spotify', 'completo'), false, 'a passada completa resgata o parcial');
+  assert.equal(isFresh(fullBarato, 'spotify', 'completo'), true, 'um disco inteiro já está certo, barato ou não');
+  assert.equal(isFresh(parcialCompleto, 'spotify', 'completo'), true, 'parcial já tentado a fundo espera o TTL');
+});
+
+// O Retry-After não atravessa o CORS, mas a rotina do Actions roda fora do
+// navegador e enxerga. É o único número real sobre quando a cota volta.
+await test('Pipeline: matchAll devolve o Retry-After para quem consegue lê-lo', async () => {
+  const cache = initCache();
+  const albums = [{ key: 'k1', releaseId: 1, artist: 'x', title: 't', artists: ['x'] }];
+  cache.discogs[1] = { tracklist: [], barcode: null };
+  const matchFn = async () => {
+    const e = new HttpError(429, { error: { status: 429, message: 'Too many requests', reason: 'QUOTA_EXCEEDED' } }, 'Spotify');
+    e.retryAfter = 61887;
+    throw e;
+  };
+  const r = await matchAll({ platform: 'spotify', albums, cache, matchFn });
+  assert.equal(r.quota, true);
+  assert.equal(r.retryAfter, 61887, 'sem isso a rotina não sabe quando voltar e fica chutando');
 });
 
 console.log(`\n${pass} testes passaram`);

@@ -1,11 +1,12 @@
-name: Sync diário do vinil
+name: Sync do vinil
 
-# Só roda quando você manda, pelo botão "Run workflow" em Actions.
-# A atualização do dia a dia é feita na página, no botão "Atualizar playlist".
-# Para voltar a rodar sozinho, descomente o schedule abaixo.
+# Roda sozinho de 6 em 6 horas. Não é para "atualizar todo dia": é para
+# alcançar a janela em que a cota de busca do Spotify volta, que ninguém sabe
+# quando é. Execução dentro da espera registrada não faz chamada nenhuma, e
+# quando não há espera registrada custa uma busca para descobrir.
 on:
-  # schedule:
-  #   - cron: '17 9 * * *' # todo dia às 06:17 (horário de Brasília)
+  schedule:
+    - cron: '7 */6 * * *'
   workflow_dispatch: {}
 
 permissions:
