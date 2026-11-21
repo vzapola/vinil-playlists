@@ -227,9 +227,11 @@ await test('Pipeline: 429 para a análise em vez de errar disco por disco', asyn
     e.status = 429;
     throw e;
   };
-  const { results, stopped } = await matchAll({ platform: 'spotify', albums, cache, matchFn });
+  const { results, stopped, rateLimited } = await matchAll({ platform: 'spotify', albums, cache, matchFn });
   assert.equal(chamadas, 1, 'para no primeiro disco, não varre os outros');
   assert.ok(/429/.test(stopped), 'o motivo da parada precisa chegar à tela');
+  assert.equal(rateLimited, true, 'é o que faz a página abrir a janela de espera');
+  assert.ok(!/depois desse tempo/.test(stopped), 'não prometer prazo que não temos');
   assert.equal(Object.keys(results).length, 0);
 });
 

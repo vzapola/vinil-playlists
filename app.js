@@ -317,6 +317,36 @@ function matchFnFor(platform, yt) {
   return (a, t) => matchAlbumYouTube(a, t, yt, { trackSearch });
 }
 
+/* ---------- espera depois de um bloqueio ---------- */
+// O Spotify não diz por quanto tempo bloqueou: o Retry-After não atravessa o
+// CORS. Então a espera é nossa — começa curta e cresce se o bloqueio insistir.
+// Uma hora concreta na tela vale mais que um "tente mais tarde" sem prazo.
+const ESPERAS_MIN = [15, 60, 180, 720];
+
+const esperaAtual = () => LS.get('vp.spCooldown', null);
+const limparEspera = () => LS.set('vp.spCooldown', null);
+const esperaRestante = () => Math.max(0, (esperaAtual()?.until || 0) - Date.now());
+const hhmm = (ts) => new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+function iniciarEspera() {
+  const ant = esperaAtual();
+  // Bloqueios próximos vão somando; depois de 6 h sem apanhar, recomeça do pé.
+  const emSequencia = ant && Date.now() - (ant.at || 0) < 6 * 3600e3;
+  const strikes = Math.min((emSequencia ? ant.strikes : 0) + 1, ESPERAS_MIN.length);
+  const min = ESPERAS_MIN[strikes - 1];
+  const until = Date.now() + min * 60e3;
+  LS.set('vp.spCooldown', { until, at: Date.now(), strikes });
+  return { until, min };
+}
+
+function duracao(ms) {
+  const min = Math.ceil(ms / 60000);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h${String(m).padStart(2, '0')}` : `${h}h`;
+}
+
 // "Refazer" é ação de uma vez só: a caixa se desmarca ao começar. Deixada
 // ligada, todo clique recomeçava do primeiro disco — e, com a cota curta do
 // Spotify, a análise morria sempre no mesmo ponto sem nunca alcançar o resto.
@@ -330,11 +360,28 @@ function takeForce() {
 async function runMatch(platform) {
   log('');
   setPlatform(platform);
+
+  // Dentro da janela de espera nem se chama a API: insistir durante um
+  // bloqueio é o que o prolonga.
+  const resta = platform === 'spotify' ? esperaRestante() : 0;
+  if (resta) {
+    const msg = `Em espera depois de um bloqueio do Spotify. Pode tentar de novo às ${hhmm(esperaAtual().until)} — faltam ${duracao(resta)}.`;
+    progress(platform, 0, state.albums.length, 'Em espera — nenhuma chamada foi feita.');
+    showResult(platform, msg, null, {
+      label: 'Tentar mesmo assim',
+      onClick: () => {
+        limparEspera();
+        showResult(platform, 'Espera cancelada. Clique de novo para rodar.');
+      },
+    });
+    return { results: {}, stopped: msg, analyzed: 0 };
+  }
+
   // Notícia desde o primeiro instante: o primeiro disco pode demorar, e um
   // botão girando sem texto parece travado.
   progress(platform, 0, state.albums.length, `0/${state.albums.length} · começando…`);
   const yt = platform === 'youtube' ? newYouTube() : null;
-  const { results, stopped, analyzed, done } = await matchAll({
+  const { results, stopped: parada, analyzed, rateLimited, done } = await matchAll({
     platform,
     albums: state.albums,
     cache: state.cache,
@@ -348,6 +395,17 @@ async function runMatch(platform) {
     onProgress: (i, n, a) => progress(platform, i, n, `${i}/${n} · ${a.artist} – ${a.title}`),
   });
   saveCache();
+
+  // Bloqueou: abre a janela de espera e diz a hora exata de voltar.
+  // Passou inteiro: zera o histórico de bloqueios.
+  let stopped = parada;
+  if (rateLimited) {
+    const { until, min } = iniciarEspera();
+    stopped = `${stopped} Tente de novo a partir das ${hhmm(until)} — ${min < 60 ? `${min} min` : duracao(min * 60000)} a partir de agora.`;
+  } else if (platform === 'spotify' && !stopped) {
+    limparEspera();
+  }
+
   // A linha de progresso tem que terminar contando o desfecho. Parada logo no
   // começo, ela ficava presa em "começando…", dizendo o oposto da mensagem de
   // erro logo abaixo.
@@ -425,7 +483,7 @@ async function runSync(platform) {
   render();
 }
 
-function showResult(platform, text, url) {
+function showResult(platform, text, url, action) {
   const el = $(platform === 'spotify' ? '#sp-result' : '#yt-result');
   el.hidden = false;
   el.textContent = text + ' ';
@@ -436,6 +494,13 @@ function showResult(platform, text, url) {
     a.rel = 'noopener';
     a.textContent = 'Abrir playlist';
     el.append(a);
+  }
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'linkish';
+    b.textContent = action.label;
+    b.onclick = action.onClick;
+    el.append(b);
   }
 }
 
